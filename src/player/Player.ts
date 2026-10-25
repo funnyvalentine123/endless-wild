@@ -6,6 +6,10 @@ import {
   PITCH_MAX,
   PITCH_MIN,
   RUN_SPEED,
+  SPEED_PRESETS,
+  SPEED_SCALE_DEFAULT,
+  SPEED_SCALE_MAX,
+  SPEED_SCALE_MIN,
   SWIM_DEPTH,
   SWIM_FLOOR_OFFSET,
   SWIM_SPEED_FACTOR,
@@ -47,6 +51,7 @@ export interface CollisionResolver {
  */
 export class Player {
   readonly state: PlayerState;
+  private speedScaleValue = SPEED_SCALE_DEFAULT;
 
   constructor(
     private readonly world: World,
@@ -72,6 +77,28 @@ export class Player {
     this.state.pitch = clamp(this.state.pitch - pitchDelta, PITCH_MIN, PITCH_MAX);
   }
 
+  /** 当前移动速度倍率。 */
+  get speedScale(): number {
+    return this.speedScaleValue;
+  }
+
+  /** 设置移动速度倍率，返回夹紧到合法范围后的值。 */
+  setSpeedScale(scale: number): number {
+    this.speedScaleValue = clamp(scale, SPEED_SCALE_MIN, SPEED_SCALE_MAX);
+    return this.speedScaleValue;
+  }
+
+  /** 在预设档位间加速（1）或减速（-1），返回新的倍率。 */
+  stepSpeedScale(direction: -1 | 1): number {
+    const current = this.speedScaleValue;
+    const target =
+      direction > 0
+        ? SPEED_PRESETS.find((preset) => preset > current + 0.001)
+        : [...SPEED_PRESETS].reverse().find((preset) => preset < current - 0.001);
+
+    return this.setSpeedScale(target ?? current);
+  }
+
   /** 返回本帧水平移动速度（米/秒），用于角色动画。 */
   update(dt: number, intent: PlayerIntent, autoWalk: boolean): number {
     const state = this.state;
@@ -84,13 +111,17 @@ export class Player {
       const targetX = this.world.roadX(targetZ);
       const wantedYaw = Math.atan2(-(targetX - state.x), -(targetZ - state.z));
       state.yaw +=
-        angularDifference(state.yaw, wantedYaw) * Math.min(1, dt * AUTO_WALK_TURN_RATE);
+        angularDifference(state.yaw, wantedYaw) *
+        Math.min(1, dt * AUTO_WALK_TURN_RATE * this.speedScaleValue);
       forward = Math.max(forward, 1);
     }
 
     const ground = this.world.groundAt(state.x, state.z);
     const swimming = ground < WATER_LEVEL - SWIM_DEPTH;
-    const speed = (intent.run ? RUN_SPEED : WALK_SPEED) * (swimming ? SWIM_SPEED_FACTOR : 1);
+    const speed =
+      (intent.run ? RUN_SPEED : WALK_SPEED) *
+      (swimming ? SWIM_SPEED_FACTOR : 1) *
+      this.speedScaleValue;
 
     const length = Math.hypot(forward, strafe);
     if (length > 1) {
@@ -119,7 +150,7 @@ export class Player {
     const floor = swimming ? WATER_LEVEL - SWIM_FLOOR_OFFSET : this.world.groundAt(state.x, state.z);
 
     if (intent.jump && state.grounded && !swimming) {
-      state.vy = JUMP_SPEED;
+      state.vy = JUMP_SPEED * this.speedScaleValue;
       state.grounded = false;
     }
 

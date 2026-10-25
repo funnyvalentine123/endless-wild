@@ -4,7 +4,11 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
   gap: 8px;
+  max-width: calc(100vw - 24px);
   padding: 8px;
 }
 
@@ -30,4 +34,33 @@
 #bar button[aria-pressed="true"] {
   background: #f3b33d;
   color: #2a1c00;
+}
+
+#bar .speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+  margin-right: 2px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+#bar .speed button {
+  padding: 9px 10px;
+  line-height: 1;
+  font-size: 14px;
+}
+
+#bar .speed input[type="range"] {
+  width: 96px;
+  accent-color: #f3b33d;
+  cursor: pointer;
+}
+
+#speedValue {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  color: #ffe9a8;
+  font-variant-numeric: tabular-nums;
 }

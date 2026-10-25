@@ -1,4 +1,3 @@
-import './styles/main.css';
 import { Game } from './app/Game';
 
 function bootstrap(): void {

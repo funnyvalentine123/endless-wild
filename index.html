@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#9fd0f0" />
   <meta name="description" content="无尽山野：一个无限程序化生成的 3D 自由探索小游戏。" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <!-- 样式放在 head 里由浏览器阻塞加载，避免开发模式下先渲染无样式 DOM 再被 JS 注入 CSS。 -->
+  <link rel="stylesheet" href="/src/styles/main.css" />
   <title>无尽山野 · 3D 自由探索</title>
 </head>
 <body>
@@ -26,9 +28,15 @@
     <button id="mapOpen" type="button" aria-haspopup="dialog" aria-expanded="false">大地图 (M)</button>
   </div>
 
-  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · M 大地图 · Esc 释放鼠标</div>
+  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · -/= 调速 · M 大地图 · Esc 释放鼠标</div>
 
   <nav id="bar" class="panel" aria-label="游戏操作">
+    <div class="speed" role="group" aria-label="移动速度">
+      <button id="speedDown" type="button" aria-label="降低移动速度">−</button>
+      <input id="speedRange" type="range" min="50" max="700" step="5" value="100" aria-label="移动速度倍率" />
+      <button id="speedUp" type="button" aria-label="提高移动速度">+</button>
+      <span id="speedValue">×1.00</span>
+    </div>
     <button id="bAuto" type="button" aria-pressed="false">自动前进 (F)</button>
     <button id="bTime" type="button" aria-pressed="false">时间流逝 (T)</button>
     <button id="bView" type="button" aria-pressed="false">第三人称 (V)</button>
@@ -50,6 +58,7 @@
         <kbd>空格</kbd><span>跳跃</span>
         <kbd>F</kbd><span>沿着道路自动前进</span>
         <kbd>T / V</kbd><span>时间流逝 / 切换视角</span>
+        <kbd>- / =</kbd><span>减速 / 加速移动（也可拖动底部滑杆）</span>
         <kbd>M</kbd><span>打开 3km 范围大地图</span>
       </div>
       <button id="go" type="button">开始探索</button>

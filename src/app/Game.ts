@@ -13,6 +13,7 @@ import { BigMap } from '../ui/BigMap';
 import { VillageManager } from '../village/VillageManager';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
+import { SpeedControl } from '../ui/SpeedControl';
 import { StartScreen } from '../ui/StartScreen';
 import { Toolbar } from '../ui/Toolbar';
 import { World } from '../world/World';
@@ -50,6 +51,7 @@ export class Game {
   private readonly bigMap: BigMap;
   private readonly startScreen: StartScreen;
   private readonly toolbar: Toolbar;
+  private readonly speedControl: SpeedControl;
   private readonly loop: GameLoop;
   private readonly canvas: HTMLCanvasElement;
 
@@ -121,6 +123,11 @@ export class Game {
       onToggleView: () => this.setThirdPerson(!this.thirdPerson),
       onNewWorld: () => this.loadNewWorld(),
     });
+    this.speedControl = new SpeedControl({
+      onStep: (direction) => this.setSpeedScale(this.player.stepSpeedScale(direction)),
+      onSet: (scale) => this.setSpeedScale(scale),
+    });
+    this.speedControl.setValue(this.player.speedScale);
 
     this.loop = new GameLoop((dt) => this.update(dt));
 
@@ -149,6 +156,7 @@ export class Game {
     this.bigMap.dispose();
     this.startScreen.dispose();
     this.toolbar.dispose();
+    this.speedControl.dispose();
     delete window.__wild;
   }
 
@@ -241,6 +249,11 @@ export class Game {
     this.toolbar.setView(enabled);
   }
 
+  private setSpeedScale(scale: number): void {
+    this.player.setSpeedScale(scale);
+    this.speedControl.setValue(this.player.speedScale);
+  }
+
   private loadNewWorld(): void {
     const seed = createRandomWorldSeed();
     persistWorldSeed(seed);
@@ -253,6 +266,8 @@ export class Game {
     else if (action === 'toggle-view') this.setThirdPerson(!this.thirdPerson);
     else if (action === 'toggle-map') this.toggleMap();
     else if (action === 'close-map' && this.mapOpen) this.closeMap();
+    else if (action === 'speed-down') this.setSpeedScale(this.player.stepSpeedScale(-1));
+    else if (action === 'speed-up') this.setSpeedScale(this.player.stepSpeedScale(1));
   };
 
   private installDebugApi(): void {
@@ -263,6 +278,8 @@ export class Game {
       roads: this.streamer.roads,
       camera: this.viewport.camera,
       setAuto: (value: boolean) => this.setAutoWalk(value),
+      getSpeed: () => this.player.speedScale,
+      setSpeed: (scale: number) => this.setSpeedScale(scale),
       height: (x: number, z: number) => this.world.height(x, z),
       getHour: () => this.dayNight.hour,
       setHour: (hour: number) => this.dayNight.setHour(hour),

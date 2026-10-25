@@ -11,6 +11,8 @@ export interface WildDebugApi {
   roads: ReadonlyMap<number, RoadView>;
   camera: PerspectiveCamera;
   setAuto(value: boolean): void;
+  getSpeed(): number;
+  setSpeed(scale: number): void;
   height(x: number, z: number): number;
   getHour(): number;
   setHour(hour: number): void;

@@ -10,8 +10,27 @@
     height: 100px;
   }
 
+  #bar {
+    gap: 6px;
+  }
+
   #bar button {
     padding: 8px 10px;
     font-size: 12px;
+  }
+
+  #bar .speed input[type="range"] {
+    width: 64px;
+  }
+
+  #speedValue {
+    min-width: 38px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 560px) {
+  #hint {
+    bottom: 112px;
   }
 }

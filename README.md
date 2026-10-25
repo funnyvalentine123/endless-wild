@@ -62,11 +62,20 @@ npm run preview
 | `Shift` | 奔跑 |
 | `空格` | 跳跃 |
 | `F` | 沿道路自动前进 |
+| `-` / `=` | 减速 / 加速移动（预设档位） |
 | `T` | 加速时间流逝 |
 | `V` | 切换第一 / 第三人称 |
 | `M` / 点击小地图 | 打开 / 关闭 3km 大地图 |
 | `Esc` | 关闭大地图 / 释放鼠标 |
 | 触屏 | 左下摇杆移动、右侧按钮跳跃、空白处拖动视角 |
+
+### 速度系统
+
+- 倍率范围为 **0.5×–7×**，同时缩放水平移动速度（走路 / 奔跑 / 游泳）与跳跃初速，重力保持不变；
+- `-` / `=` 在预设档位 **0.5× / 1× / 1.5× / 2× / 3× / 4× / 5× / 6× / 7×** 间切换；
+- 底部操作栏的滑杆可在范围内连续微调，右侧实时显示当前倍率；
+- 自动前进的转向速率也随倍率提高，避免高速时在弯道切出路面；
+- 调试接口：`window.__wild.getSpeed()` / `window.__wild.setSpeed(2)`。
 
 ## 大地图
 
@@ -165,6 +174,7 @@ npm run preview
 │  │  ├─ BigMap.ts                # 3km 大地图：分片采样 + 道路/网格/标记
 │  │  ├─ StartScreen.ts
 │  │  ├─ Toolbar.ts
+│  │  ├─ SpeedControl.ts           # 速度倍率：档位按钮 + 滑杆
 │  │  └─ format.ts
 │  ├─ styles/                     # 按职责拆分的 CSS
 │  │  ├─ base.css
@@ -223,6 +233,8 @@ window.__wild.chunks.size     // 当前已加载区块数
 window.__wild.roads.size
 window.__wild.camera
 window.__wild.setAuto(true)   // 自动前进
+window.__wild.getSpeed()      // 当前移动速度倍率
+window.__wild.setSpeed(2)     // 设为 2 倍速
 window.__wild.getHour()       // 当前时刻
 window.__wild.setHour(21)     // 直接调到夜间，方便截图/调光
 window.__wild.wildlifePopulation()  // 各类动物当前数量
