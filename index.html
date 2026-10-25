@@ -19,6 +19,7 @@
     <div>所在：<span id="biome">草原</span></div>
     <div>已行进：<b id="dist">0</b> 米</div>
     <div>海拔：<b id="alt">0</b> 米 · 时刻 <b id="clock">08:00</b></div>
+    <div>天气：<b id="weatherNow">晴</b></div>
     <div>世界种子：<b id="seed">-</b></div>
   </div>
 
@@ -37,10 +38,27 @@
       <button id="speedUp" type="button" aria-label="提高移动速度">+</button>
       <span id="speedValue">×1.00</span>
     </div>
+    <div class="weather" role="group" aria-label="天气" title="手动切换天气会关闭自动调度">
+      <label class="weather-auto">
+        <input id="weatherAuto" type="checkbox" checked />
+        自动
+      </label>
+      <select id="weatherKind" aria-label="天气类型">
+        <option value="clear">晴</option>
+        <option value="rain">雨</option>
+        <option value="snow">雪</option>
+      </select>
+      <select id="weatherLevel" aria-label="天气强度">
+        <option value="light">小</option>
+        <option value="medium" selected>中</option>
+        <option value="heavy">大</option>
+      </select>
+    </div>
     <button id="bAuto" type="button" aria-pressed="false">自动前进 (F)</button>
     <button id="bTime" type="button" aria-pressed="false">时间流逝 (T)</button>
     <button id="bView" type="button" aria-pressed="false">第三人称 (V)</button>
     <button id="bNew" type="button">新世界</button>
+    <button id="barMore" type="button" aria-expanded="false" aria-label="展开更多操作">更多</button>
   </nav>
 
   <div id="joy" aria-hidden="true"><div id="joyK"></div></div>
@@ -59,6 +77,7 @@
         <kbd>F</kbd><span>沿着道路自动前进</span>
         <kbd>T / V</kbd><span>时间流逝 / 切换视角</span>
         <kbd>- / =</kbd><span>减速 / 加速移动（也可拖动底部滑杆）</span>
+        <kbd>天气</kbd><span>底部可手动切换雨 / 雪与大小</span>
         <kbd>M</kbd><span>打开 3km 范围大地图</span>
       </div>
       <button id="go" type="button">开始探索</button>

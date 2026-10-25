@@ -24,11 +24,16 @@ const camPosition = new Vector3();
  */
 export class CameraRig {
   private smoothedEyeY: number | null = null;
+  private waterLevelValue = WATER_LEVEL;
 
   constructor(
     private readonly camera: PerspectiveCamera,
     private readonly world: World,
   ) {}
+
+  setWaterLevel(level: number): void {
+    this.waterLevelValue = level;
+  }
 
   update(state: PlayerState, started: boolean, thirdPerson: boolean, dt: number): void {
     const targetEyeY = state.y + EYE_HEIGHT;
@@ -63,7 +68,7 @@ export class CameraRig {
     camPosition.y = Math.max(
       camPosition.y,
       this.world.groundAt(camPosition.x, camPosition.z) + THIRD_PERSON_GROUND_CLEARANCE,
-      WATER_LEVEL + THIRD_PERSON_WATER_CLEARANCE,
+      this.waterLevelValue + THIRD_PERSON_WATER_CLEARANCE,
     );
 
     this.camera.position.lerp(camPosition, Math.min(1, dt * THIRD_PERSON_SMOOTHING));

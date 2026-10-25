@@ -14,6 +14,7 @@ interface HudElements {
   distance: HTMLElement;
   altitude: HTMLElement;
   clock: HTMLElement;
+  weather: HTMLElement;
   seed: HTMLElement;
   compass: HTMLElement;
 }
@@ -32,29 +33,31 @@ export class Hud {
       distance: requireElement('dist'),
       altitude: requireElement('alt'),
       clock: requireElement('clock'),
+      weather: requireElement('weatherNow'),
       seed: requireElement('seed'),
       compass: requireElement('compass'),
     };
     this.elements.seed.textContent = String(seed);
   }
 
-  update(dt: number, state: PlayerState, hour: number): void {
+  update(dt: number, state: PlayerState, hour: number, weather: string): void {
     this.timer += dt;
     if (this.timer < HUD_UPDATE_INTERVAL) return;
     this.timer = 0;
-    this.render(state, hour);
+    this.render(state, hour, weather);
   }
 
-  forceUpdate(state: PlayerState, hour: number): void {
+  forceUpdate(state: PlayerState, hour: number, weather: string): void {
     this.timer = 0;
-    this.render(state, hour);
+    this.render(state, hour, weather);
   }
 
-  private render(state: PlayerState, hour: number): void {
+  private render(state: PlayerState, hour: number, weather: string): void {
     this.elements.biome.textContent = this.world.biomeAt(state.x, state.z);
     this.elements.distance.textContent = formatDistance(state.walked);
     this.elements.altitude.textContent = formatAltitude(state.y);
     this.elements.clock.textContent = formatClock(hour);
+    this.elements.weather.textContent = weather;
     this.elements.compass.textContent = formatCompass(state.yaw);
   }
 }

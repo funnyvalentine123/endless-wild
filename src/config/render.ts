@@ -19,6 +19,7 @@ export const STAR_RADIUS = 850;
 export const STAR_SIZE = 2.2;
 
 export const CLOUD_COUNT = 26;
+export const CLOUD_WEATHER_COUNT = 14;
 export const CLOUD_SPREAD = 450;
 export const CLOUD_HEIGHT_MIN = 110;
 export const CLOUD_HEIGHT_RANGE = 50;

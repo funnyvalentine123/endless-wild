@@ -37,6 +37,12 @@ export class Lighting {
     this.hemi.intensity = daylight.hemiIntensity;
   }
 
+  /** 雨雪天在昼夜光照基础上再压暗；由 apply 之后调用，避免逐帧累积。 */
+  setWeatherDim(dim: number): void {
+    this.sun.intensity *= dim;
+    this.hemi.intensity *= dim;
+  }
+
   dispose(): void {
     this.scene.remove(this.hemi, this.sun, this.sun.target, this.ambient);
     this.hemi.dispose();

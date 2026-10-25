@@ -15,6 +15,8 @@ export class Water {
   private readonly material: MeshPhongMaterial;
   private readonly mesh: Mesh<PlaneGeometry, MeshPhongMaterial>;
   private readonly timeUniform: IUniform<number> = { value: 0 };
+  private brightnessValue = 1;
+  private weatherDimValue = 1;
 
   constructor(private readonly scene: Scene) {
     this.material = new MeshPhongMaterial({
@@ -51,7 +53,25 @@ export class Water {
   }
 
   setBrightness(brightness: number): void {
-    this.material.color.setHex(BASE_COLOR).multiplyScalar(brightness);
+    this.brightnessValue = brightness;
+    this.applyColor();
+  }
+
+  /** 雨天水位上涨；晴天由天气系统逐帧插值回落到基础水位。 */
+  setLevelOffset(offset: number): void {
+    this.mesh.position.y = WATER_LEVEL + offset;
+  }
+
+  /** 阴雨天水面同步变暗，避免比天空还亮。 */
+  setWeatherDim(dim: number): void {
+    this.weatherDimValue = dim;
+    this.applyColor();
+  }
+
+  private applyColor(): void {
+    this.material.color
+      .setHex(BASE_COLOR)
+      .multiplyScalar(this.brightnessValue * this.weatherDimValue);
   }
 
   dispose(): void {

@@ -3,12 +3,21 @@ import { requestPointerLock } from '../input/pointerLock';
 import type { InputAction } from '../input/types';
 import { GameLoop } from '../core/GameLoop';
 import { requireElement } from '../core/dom';
+import { FAST_TIME_SCALE, NORMAL_TIME_SCALE } from '../config/daynight';
+import { WATER_LEVEL } from '../config/world';
+import {
+  formatWeatherLabel,
+  type WeatherKind,
+  type WeatherLevel,
+} from '../config/weather';
 import { CameraRig } from '../player/CameraRig';
 import { Hero } from '../player/Hero';
 import { Player } from '../player/Player';
 import { SceneEnvironment } from '../render/environment/SceneEnvironment';
 import { Viewport } from '../render/Viewport';
 import { DayNightCycle } from '../systems/DayNightCycle';
+import { WeatherEffects } from '../systems/WeatherEffects';
+import { WeatherSystem } from '../systems/WeatherSystem';
 import { BigMap } from '../ui/BigMap';
 import { VillageManager } from '../village/VillageManager';
 import { Hud } from '../ui/Hud';
@@ -16,6 +25,7 @@ import { Minimap } from '../ui/Minimap';
 import { SpeedControl } from '../ui/SpeedControl';
 import { StartScreen } from '../ui/StartScreen';
 import { Toolbar } from '../ui/Toolbar';
+import { WeatherControl } from '../ui/WeatherControl';
 import { World } from '../world/World';
 import { WorldMaterials } from '../world/WorldMaterials';
 import { RoadPropAssets } from '../world/assets/RoadPropAssets';
@@ -46,12 +56,15 @@ export class Game {
   private readonly cameraRig: CameraRig;
   private readonly input: InputManager;
   private readonly dayNight: DayNightCycle;
+  private readonly weather: WeatherSystem;
+  private readonly weatherEffects: WeatherEffects;
   private readonly hud: Hud;
   private readonly minimap: Minimap;
   private readonly bigMap: BigMap;
   private readonly startScreen: StartScreen;
   private readonly toolbar: Toolbar;
   private readonly speedControl: SpeedControl;
+  private readonly weatherControl: WeatherControl;
   private readonly loop: GameLoop;
   private readonly canvas: HTMLCanvasElement;
 
@@ -61,6 +74,9 @@ export class Game {
   private thirdPerson = false;
   private mapOpen = false;
   private elapsed = 0;
+  private uiWeatherKind: WeatherKind | null = null;
+  private uiWeatherLevel: WeatherLevel | null = null;
+  private uiWeatherAuto: boolean | null = null;
 
   constructor() {
     this.seed = resolveWorldSeed();
@@ -98,6 +114,8 @@ export class Game {
     this.hero = new Hero(this.viewport.scene);
     this.cameraRig = new CameraRig(this.viewport.camera, this.world);
     this.dayNight = new DayNightCycle();
+    this.weather = new WeatherSystem();
+    this.weatherEffects = new WeatherEffects();
 
     this.hud = new Hud(this.world, this.seed);
     this.minimap = new Minimap(this.world);
@@ -128,11 +146,20 @@ export class Game {
       onSet: (scale) => this.setSpeedScale(scale),
     });
     this.speedControl.setValue(this.player.speedScale);
+    this.weatherControl = new WeatherControl({
+      onAutoChange: (enabled) => this.setWeatherAuto(enabled),
+      onManualChange: (kind, level) => this.setManualWeather(kind, level),
+    });
+    this.weatherControl.setState(this.weather.snapshot);
 
     this.loop = new GameLoop((dt) => this.update(dt));
 
     this.startScreen.setReady(this.seed);
-    this.hud.forceUpdate(this.player.state, this.dayNight.hour);
+    this.hud.forceUpdate(
+      this.player.state,
+      this.dayNight.hour,
+      formatWeatherLabel(this.weather.kind, this.weather.level),
+    );
     this.installDebugApi();
     this.startScreen.focus();
   }
@@ -157,6 +184,7 @@ export class Game {
     this.startScreen.dispose();
     this.toolbar.dispose();
     this.speedControl.dispose();
+    this.weatherControl.dispose();
     delete window.__wild;
   }
 
@@ -165,6 +193,16 @@ export class Game {
     if (this.mapOpen) return;
 
     this.elapsed += dt;
+
+    // 天气先推进，让玩家物理和水面使用本帧的新水位。
+    this.weather.update(dt, this.fastTime ? FAST_TIME_SCALE : NORMAL_TIME_SCALE);
+    this.weatherEffects.update(dt, this.weather.snapshot);
+    this.materials.setSnowCoverage(this.weatherEffects.snowCoverage);
+
+    const waterLevel = WATER_LEVEL + this.weatherEffects.waterLevelOffset;
+    this.player.setWaterLevel(waterLevel);
+    this.cameraRig.setWaterLevel(waterLevel);
+    this.syncWeatherUi();
 
     const look = this.input.consumeLook();
     this.player.applyLook(look.yaw, look.pitch);
@@ -186,6 +224,7 @@ export class Game {
     const daylight = this.dayNight.snapshot;
     this.materials.setLampIntensity(daylight.lampIntensity);
     this.environment.applyDaylight(daylight, state.x, state.y, state.z);
+    this.environment.applyWeather(this.weather.snapshot, this.weatherEffects.waterLevelOffset);
     this.environment.update(
       dt,
       this.elapsed,
@@ -195,7 +234,12 @@ export class Game {
     );
 
     this.hero.update(state, speed);
-    this.hud.update(dt, state, this.dayNight.hour);
+    this.hud.update(
+      dt,
+      state,
+      this.dayNight.hour,
+      formatWeatherLabel(this.weather.kind, this.weather.level),
+    );
     this.minimap.update(dt, state);
 
     this.viewport.render();
@@ -254,6 +298,34 @@ export class Game {
     this.speedControl.setValue(this.player.speedScale);
   }
 
+  private setManualWeather(kind: WeatherKind, level: WeatherLevel): void {
+    this.weather.setManual(kind, level);
+    this.syncWeatherUi(true);
+  }
+
+  private setWeatherAuto(enabled: boolean): void {
+    this.weather.setAuto(enabled);
+    this.syncWeatherUi(true);
+  }
+
+  /** 自动天气变化后同步下拉框；只在类型/强度/模式变化时写 DOM。 */
+  private syncWeatherUi(force = false): void {
+    const weather = this.weather;
+    if (
+      !force &&
+      weather.kind === this.uiWeatherKind &&
+      weather.level === this.uiWeatherLevel &&
+      weather.auto === this.uiWeatherAuto
+    ) {
+      return;
+    }
+
+    this.uiWeatherKind = weather.kind;
+    this.uiWeatherLevel = weather.level;
+    this.uiWeatherAuto = weather.auto;
+    this.weatherControl.setState(weather.snapshot);
+  }
+
   private loadNewWorld(): void {
     const seed = createRandomWorldSeed();
     persistWorldSeed(seed);
@@ -283,6 +355,19 @@ export class Game {
       height: (x: number, z: number) => this.world.height(x, z),
       getHour: () => this.dayNight.hour,
       setHour: (hour: number) => this.dayNight.setHour(hour),
+      getWeather: () => ({
+        kind: this.weather.kind,
+        level: this.weather.level,
+        auto: this.weather.auto,
+        rain: this.weather.snapshot.rain,
+        snow: this.weather.snapshot.snow,
+        precipitation: this.weather.snapshot.precipitation,
+        snowCoverage: this.weatherEffects.snowCoverage,
+        waterLevelOffset: this.weatherEffects.waterLevelOffset,
+      }),
+      setWeather: (kind: WeatherKind, level: WeatherLevel = 'medium') =>
+        this.setManualWeather(kind, level),
+      setWeatherAuto: (enabled: boolean) => this.setWeatherAuto(enabled),
       wildlifePopulation: () => this.wildlife.getPopulation(),
       wildlifeSightings: () => this.wildlife.getSightings(),
       villageStats: () => this.village.getStats(),

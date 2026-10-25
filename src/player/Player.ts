@@ -52,6 +52,7 @@ export interface CollisionResolver {
 export class Player {
   readonly state: PlayerState;
   private speedScaleValue = SPEED_SCALE_DEFAULT;
+  private waterLevelValue = WATER_LEVEL;
 
   constructor(
     private readonly world: World,
@@ -99,6 +100,11 @@ export class Player {
     return this.setSpeedScale(target ?? current);
   }
 
+  /** 雨天水位会上涨，游泳判定跟随动态水面而不是固定常量。 */
+  setWaterLevel(level: number): void {
+    this.waterLevelValue = level;
+  }
+
   /** 返回本帧水平移动速度（米/秒），用于角色动画。 */
   update(dt: number, intent: PlayerIntent, autoWalk: boolean): number {
     const state = this.state;
@@ -117,7 +123,7 @@ export class Player {
     }
 
     const ground = this.world.groundAt(state.x, state.z);
-    const swimming = ground < WATER_LEVEL - SWIM_DEPTH;
+    const swimming = ground < this.waterLevelValue - SWIM_DEPTH;
     const speed =
       (intent.run ? RUN_SPEED : WALK_SPEED) *
       (swimming ? SWIM_SPEED_FACTOR : 1) *
@@ -147,7 +153,9 @@ export class Player {
     state.walked += moved;
     state.phase += moved * WALK_PHASE_PER_METER;
 
-    const floor = swimming ? WATER_LEVEL - SWIM_FLOOR_OFFSET : this.world.groundAt(state.x, state.z);
+    const floor = swimming
+      ? this.waterLevelValue - SWIM_FLOOR_OFFSET
+      : this.world.groundAt(state.x, state.z);
 
     if (intent.jump && state.grounded && !swimming) {
       state.vy = JUMP_SPEED * this.speedScaleValue;

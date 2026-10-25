@@ -13,6 +13,7 @@ import {
   CLOUD_HEIGHT_MIN,
   CLOUD_HEIGHT_RANGE,
   CLOUD_SPREAD,
+  CLOUD_WEATHER_COUNT,
 } from '../../config/render';
 import { createRandom } from '../../math/random';
 import { mergeGeometries } from '../geometry/mergeGeometries';
@@ -20,6 +21,8 @@ import { mergeGeometries } from '../geometry/mergeGeometries';
 /** 低模积云：围绕玩家漂移，超出范围后从另一侧循环。 */
 export class Clouds {
   private readonly group = new Group();
+  private readonly weatherClouds: Mesh[] = [];
+  private weatherAmount = 0;
   private readonly material: MeshLambertMaterial = new MeshLambertMaterial({
     color: 0xffffff,
     emissive: 0xffffff,
@@ -33,7 +36,7 @@ export class Clouds {
   constructor(private readonly scene: Scene) {
     const random = createRandom(99);
 
-    for (let i = 0; i < CLOUD_COUNT; i++) {
+    for (let i = 0; i < CLOUD_COUNT + CLOUD_WEATHER_COUNT; i++) {
       const parts: BufferGeometry[] = [];
       const count = 4 + Math.floor(random() * 4);
 
@@ -52,6 +55,10 @@ export class Clouds {
       );
 
       for (const part of parts) part.dispose();
+      if (i >= CLOUD_COUNT) {
+        cloud.visible = false;
+        this.weatherClouds.push(cloud);
+      }
       this.group.add(cloud);
     }
 
@@ -59,8 +66,9 @@ export class Clouds {
   }
 
   update(dt: number, playerX: number, playerZ: number): void {
+    const drift = CLOUD_DRIFT_SPEED * (1 + this.weatherAmount * 1.2);
     for (const cloud of this.group.children) {
-      cloud.position.x += dt * CLOUD_DRIFT_SPEED;
+      cloud.position.x += dt * drift;
 
       const dx = cloud.position.x - playerX;
       const dz = cloud.position.z - playerZ;
@@ -73,6 +81,21 @@ export class Clouds {
 
   setEmissive(color: Color): void {
     this.material.emissive.copy(color);
+  }
+
+  /** 坏天气：增加预分配的云、压暗云色并加快漂移。 */
+  setWeather(amount: number): void {
+    const p = Math.max(0, Math.min(1, amount));
+    this.weatherAmount = p;
+
+    const visible = Math.round(this.weatherClouds.length * p);
+    for (let i = 0; i < this.weatherClouds.length; i++) {
+      this.weatherClouds[i].visible = i < visible;
+    }
+
+    this.material.color.setRGB(1 - 0.42 * p, 1 - 0.43 * p, 1 - 0.38 * p);
+    this.material.opacity = 0.92 + 0.08 * p;
+    this.material.emissiveIntensity = 0.55 * (1 - 0.45 * p);
   }
 
   dispose(): void {
