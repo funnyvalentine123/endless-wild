@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>无尽山野 · 3D 自由探索</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #9fd0f0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #fff; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel { background: rgba(10, 22, 30, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; }
+  #hud { position: fixed; top: 14px; left: 14px; padding: 12px 16px; min-width: 190px; font-size: 13px; line-height: 1.75; pointer-events: none; }
+  #hud .title { font-size: 15px; font-weight: 700; letter-spacing: 2px; margin-bottom: 4px; }
+  #hud b { font-weight: 600; color: #ffe9a8; }
+  #biome { display: inline-block; padding: 0 8px; border-radius: 8px; background: rgba(255,255,255,0.18); }
+  #mapWrap { position: fixed; top: 14px; right: 14px; padding: 8px; }
+  #minimap { display: block; width: 150px; height: 150px; border-radius: 50%; }
+  #compass { text-align: center; font-size: 12px; margin-top: 4px; letter-spacing: 1px; }
+  #bar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px; }
+  #bar button { appearance: none; border: 0; cursor: pointer; color: #fff; font-size: 13px; padding: 9px 14px; border-radius: 10px; background: rgba(255,255,255,0.14); transition: background .2s; white-space: nowrap; }
+  #bar button:hover, #bar button:focus-visible { background: rgba(255,255,255,0.3); outline: none; }
+  #bar button[aria-pressed="true"] { background: #f3b33d; color: #2a1c00; }
+  #hint { position: fixed; bottom: 76px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .85; text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; text-align: center; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,.7); pointer-events: none; }
+  #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(20,40,30,.35), rgba(5,15,20,.75)); z-index: 10; }
+  #start .card { max-width: 440px; width: calc(100% - 40px); padding: 30px 28px; text-align: center; }
+  #start h1 { font-size: 30px; letter-spacing: 6px; margin-bottom: 8px; }
+  #start p { font-size: 14px; opacity: .9; line-height: 1.8; margin-bottom: 6px; }
+  #start .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; text-align: left; font-size: 13px; margin: 16px auto 22px; width: fit-content; }
+  #start kbd { background: rgba(255,255,255,.18); border-radius: 5px; padding: 1px 7px; font-family: inherit; font-size: 12px; }
+  #go { border: 0; cursor: pointer; font-size: 17px; font-weight: 700; padding: 12px 40px; border-radius: 30px; background: linear-gradient(135deg,#ffd166,#f39c3d); color: #3a2200; box-shadow: 0 6px 20px rgba(243,156,61,.45); }
+  #go:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  #loading { font-size: 13px; opacity: .8; margin-top: 12px; }
+  #joy { position: fixed; left: 26px; bottom: 90px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.25); display: none; }
+  #joyK { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  #jumpBtn { position: fixed; right: 30px; bottom: 100px; width: 70px; height: 70px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); background: rgba(255,255,255,.15); color: #fff; font-size: 14px; display: none; }
+  body.touch #joy, body.touch #jumpBtn { display: block; }
+  body.touch #hint, body.touch #cross { display: none; }
+  @media (max-width: 640px) { #hud { font-size: 12px; min-width: 0; padding: 8px 12px; } #minimap { width: 100px; height: 100px; } #bar button { padding: 8px 10px; font-size: 12px; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="3D 自由探索场景"></canvas>
+<div id="cross" aria-hidden="true"></div>
+<div id="hud" class="panel" aria-live="polite">
+  <div class="title">无尽山野</div>
+  <div>所在：<span id="biome">草原</span></div>
+  <div>已行进：<b id="dist">0</b> 米</div>
+  <div>海拔：<b id="alt">0</b> 米 · 时刻 <b id="clock">08:00</b></div>
+  <div>世界种子：<b id="seed">-</b></div>
+</div>
+<div id="mapWrap" class="panel"><canvas id="minimap" width="150" height="150" aria-label="小地图"></canvas><div id="compass">N</div></div>
+<div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · Esc 释放鼠标</div>
+<nav id="bar" class="panel" aria-label="游戏操作">
+  <button id="bAuto" aria-pressed="false">自动前进 (F)</button>
+  <button id="bTime">时间流逝 (T)</button>
+  <button id="bView" aria-pressed="false">第三人称 (V)</button>
+  <button id="bNew">新世界</button>
+</nav>
+<div id="joy" aria-hidden="true"><div id="joyK"></div></div>
+<button id="jumpBtn" aria-label="跳跃">跳</button>
+<div id="start">
+  <div class="card panel">
+    <h1>无尽山野</h1>
+    <p>一条没有尽头的小路，向前走，世界会在你脚下生长。</p>
+    <p>森林、河流、山坡与湖泊 —— 每一步都是新的风景。</p>
+    <div class="keys">
+      <kbd>W A S D</kbd><span>前后左右移动</span>
+      <kbd>鼠标</kbd><span>环顾四周（点击画面锁定）</span>
+      <kbd>Shift</kbd><span>奔跑</span>
+      <kbd>空格</kbd><span>跳跃</span>
+      <kbd>F</kbd><span>沿着道路自动前进</span>
+      <kbd>T / V</kbd><span>时间流逝 / 切换视角</span>
+    </div>
+    <button id="go">开始探索</button>
+    <div id="loading">正在加载引擎…</div>
+  </div>
+</div>
+<script>
+// 经典脚本 + 动态 import：平台的 Vite 壳不会改写它，three 直接从 CDN 加载
+(async () => {
+const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js');
+// 合并若干非索引几何体（属性集合以第一个为准）
+function mergeGeometries(list) {
+  const out = new THREE.BufferGeometry();
+  for (const name of Object.keys(list[0].attributes)) {
+    const size = list[0].attributes[name].itemSize, parts = list.map(g => (g.index ? g.toNonIndexed() : g).attributes[name].array);
+    const arr = new Float32Array(parts.reduce((n, a) => n + a.length, 0)); let o = 0;
+    for (const a of parts) { arr.set(a, o); o += a.length; }
+    out.setAttribute(name, new THREE.BufferAttribute(arr, size));
+  }
+  return out;
+}
+
+// ---------- 种子与噪声 ----------
+const params = new URLSearchParams(location.search);
+let SEED = Number(params.get('seed')) || Number(localStorage.getItem('wild-seed')) || Math.floor(Math.random() * 1e6);
+localStorage.setItem('wild-seed', String(SEED));
+document.getElementById('seed').textContent = SEED;
+
+function makeRng(seed) {
+  let s = (seed >>> 0) || 1;
+  for (let i = 0; i < 6; i++) { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; }
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+function makeNoise(seed) {
+  const rnd = makeRng(seed), perm = [...Array(256).keys()], p = new Uint8Array(512);
+  for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+  const G = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+  const F2 = 0.5 * (Math.sqrt(3) - 1), G2 = (3 - Math.sqrt(3)) / 6;
+  return (x, y) => {
+    const s = (x + y) * F2, i = Math.floor(x + s), j = Math.floor(y + s), t = (i + j) * G2;
+    const x0 = x - (i - t), y0 = y - (j - t), i1 = x0 > y0 ? 1 : 0, j1 = 1 - i1;
+    const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2, x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    const ii = i & 255, jj = j & 255; let n = 0, g;
+    let t0 = 0.5 - x0 * x0 - y0 * y0; if (t0 > 0) { g = G[p[ii + p[jj]] & 7]; t0 *= t0; n += t0 * t0 * (g[0] * x0 + g[1] * y0); }
+    let t1 = 0.5 - x1 * x1 - y1 * y1; if (t1 > 0) { g = G[p[ii + i1 + p[jj + j1]] & 7]; t1 *= t1; n += t1 * t1 * (g[0] * x1 + g[1] * y1); }
+    let t2 = 0.5 - x2 * x2 - y2 * y2; if (t2 > 0) { g = G[p[ii + 1 + p[jj + 1]] & 7]; t2 *= t2; n += t2 * t2 * (g[0] * x2 + g[1] * y2); }
+    return 70 * n;
+  };
+}
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+let nBase, nHill, nMount, nLake, nRiver, nWarp, nForest, nRoad, nDetail;
+function initNoise() {
+  const r = makeRng(SEED);
+  const mk = () => makeNoise(Math.floor(r() * 1e9));
+  nBase = mk(); nHill = mk(); nMount = mk(); nLake = mk(); nRiver = mk(); nWarp = mk(); nForest = mk(); nRoad = mk(); nDetail = mk();
+}
+initNoise();
+
+// ---------- 世界函数 ----------
+const WATER = 0, ROAD_W = 6;
+function roadX(z) { return 90 * nRoad(0.37, z * 0.0022) + 22 * Math.sin(z * 0.0105); }
+function riverVal(x, z) {
+  const wx = x + 40 * nWarp(x * 0.004, z * 0.004), wz = z + 40 * nWarp(z * 0.004 + 31, x * 0.004 - 17);
+  return Math.abs(nRiver(wx * 0.0019, wz * 0.0019));
+}
+function rawHeight(x, z) {
+  let h = 5 + nBase(x * 0.0011, z * 0.0011) * 9;
+  h += (nHill(x * 0.007, z * 0.007) * 0.65 + nHill(x * 0.018 + 9, z * 0.018) * 0.25) * 8;
+  const m = nMount(x * 0.0024, z * 0.0024);
+  if (m > 0.1) { const ridge = 1 - Math.abs(nMount(x * 0.009 + 40, z * 0.009)); h += Math.pow(m - 0.1, 1.4) * 70 * (0.55 + 0.45 * ridge); }
+  h += nDetail(x * 0.06, z * 0.06) * 0.35;
+  const lake = nLake(x * 0.0032, z * 0.0032);
+  h = lerp(h, -4, smooth(0.38, 0.62, lake));
+  const rv = riverVal(x, z);
+  h = lerp(h, -2.6, smooth(0.075, 0.012, rv));
+  return h;
+}
+const rhCache = new Map();
+// 路面高度：整数 z 处缓存，中间线性插值，避免按米跳变造成走路时的台阶感
+function roadH(z) {
+  const k0 = Math.floor(z), t = z - k0;
+  return lerp(roadHAt(k0), roadHAt(k0 + 1), t);
+}
+function roadHAt(k) {
+  let v = rhCache.get(k);
+  if (v === undefined) {
+    let s = 0;
+    for (let i = -3; i <= 3; i++) { const zz = k + i * 14; s += Math.max(rawHeight(roadX(zz), zz), 2.4); }
+    v = s / 7;
+    if (rhCache.size > 20000) rhCache.clear();
+    rhCache.set(k, v);
+  }
+  return v;
+}
+function bridgeK(z) { return smooth(1.6, -0.4, rawHeight(roadX(z), z)); }
+function height(x, z) {
+  let h = rawHeight(x, z);
+  const d = Math.abs(x - roadX(z));
+  const w = 1 - smooth(ROAD_W * 0.5 + 1.2, ROAD_W * 0.5 + 14, d);
+  if (w > 0) {
+    const b = bridgeK(z);
+    h = lerp(h, roadH(z) - 0.12, w * (1 - b));
+  }
+  return h;
+}
+function groundAt(x, z) {
+  let h = height(x, z);
+  if (Math.abs(x - roadX(z)) < ROAD_W * 0.5 + 0.2) h = Math.max(h, roadH(z) + 0.05);
+  return h;
+}
+function forestAt(x, z) { return nForest(x * 0.0045, z * 0.0045) + 0.25 * nForest(x * 0.02, z * 0.02); }
+function biomeAt(x, z) {
+  const h = rawHeight(x, z);
+  if (Math.abs(x - roadX(z)) < ROAD_W * 0.5 + 0.3 && bridgeK(z) > 0.5) return '桥上';
+  if (h < WATER + 0.2) return riverVal(x, z) < 0.05 ? '河流' : '湖泊';
+  if (riverVal(x, z) < 0.08) return '河畔';
+  if (h > 42) return '雪山';
+  if (h > 20) return '山坡';
+  if (forestAt(x, z) > 0.18) return '森林';
+  return '草原';
+}
+// ---------- 渲染器与场景 ----------
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const FOG_FAR = 250;
+scene.fog = new THREE.Fog(0xbfe3ff, 40, FOG_FAR);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1500);
+
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a5a2a, 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
+scene.add(sun, sun.target);
+const ambient = new THREE.AmbientLight(0xffffff, 0.12);
+scene.add(ambient);
+
+// 天空穹顶（渐变着色器）
+const skyUni = { top: { value: new THREE.Color(0x3d8fe0) }, bottom: { value: new THREE.Color(0xbfe3ff) }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunCol: { value: new THREE.Color(0xfff2c0) } };
+const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
+  uniforms: skyUni, side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform vec3 top; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 sunCol; varying vec3 vDir;
+    void main(){ float h = clamp(vDir.y, -0.2, 1.0); vec3 c = mix(bottom, top, pow(max(h,0.0), 0.55));
+      float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
+      c += sunCol * (pow(s, 900.0) * 1.6 + pow(s, 12.0) * 0.25);
+      gl_FragColor = vec4(c, 1.0); }`
+}));
+sky.renderOrder = -1;
+scene.add(sky);
+
+// 星空
+const starGeo = new THREE.BufferGeometry();
+{ const a = []; const r = makeRng(7);
+  for (let i = 0; i < 1500; i++) { const th = r() * Math.PI * 2, ph = Math.acos(r() * 0.95); a.push(Math.sin(ph) * Math.cos(th) * 850, Math.cos(ph) * 850, Math.sin(ph) * Math.sin(th) * 850); }
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); }
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+// 水面（顶点波浪）
+const waterUni = { uTime: { value: 0 } };
+const waterMat = new THREE.MeshPhongMaterial({ color: 0x2f86b8, specular: 0x88aabb, shininess: 60, transparent: true, opacity: 0.82, flatShading: true });
+waterMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uTime = waterUni.uTime;
+  sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+    `#include <begin_vertex>
+     vec4 wp = modelMatrix * vec4(position, 1.0);
+     transformed.z += sin(wp.x * 0.35 + uTime * 1.3) * 0.12 + cos(wp.z * 0.28 + uTime * 1.1) * 0.12;`);
+};
+const water = new THREE.Mesh(new THREE.PlaneGeometry(700, 700, 140, 140), waterMat);
+water.rotation.x = -Math.PI / 2;
+water.position.y = WATER;
+scene.add(water);
+
+// 云
+const cloudGroup = new THREE.Group();
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.55, transparent: true, opacity: 0.92, fog: false });
+scene.add(cloudGroup);
+{ const r = makeRng(99);
+  cloudMat.flatShading = true;
+  for (let i = 0; i < 26; i++) {
+    const parts = [];
+    const n = 4 + Math.floor(r() * 4);
+    for (let k = 0; k < n; k++) { const g = new THREE.IcosahedronGeometry(6 + r() * 7, 0); g.translate(k * 8 - n * 4 + r() * 4, r() * 3, r() * 8 - 4); parts.push(g); }
+    const m = new THREE.Mesh(mergeGeometries(parts), cloudMat);
+    m.scale.y = 0.55;
+    m.position.set((r() - 0.5) * 900, 110 + r() * 50, (r() - 0.5) * 900);
+    cloudGroup.add(m);
+  }
+}
+// ---------- 植被与岩石的共享几何体（顶点色） ----------
+function paint(geo, hex) {
+  geo = geo.index ? geo.toNonIndexed() : geo;
+  const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return geo;
+}
+const at = (g, x, y, z) => { g.translate(x, y, z); return g; };
+const GEO = {
+  pine: mergeGeometries([
+    paint(at(new THREE.CylinderGeometry(0.22, 0.32, 1.8, 6), 0, 0.9, 0), 0x6b4a2b),
+    paint(at(new THREE.ConeGeometry(1.9, 3.0, 7), 0, 2.8, 0), 0x2e6a3a),
+    paint(at(new THREE.ConeGeometry(1.4, 2.5, 7), 0, 4.2, 0), 0x347640),
+    paint(at(new THREE.ConeGeometry(0.9, 1.9, 7), 0, 5.4, 0), 0x3b8247)]),
+  broad: mergeGeometries([
+    paint(at(new THREE.CylinderGeometry(0.25, 0.38, 2.6, 6), 0, 1.3, 0), 0x77502e),
+    paint(at(new THREE.IcosahedronGeometry(1.9, 0), 0, 3.8, 0), 0x55a03e),
+    paint(at(new THREE.IcosahedronGeometry(1.4, 0), 1.0, 3.1, 0.4), 0x4b9438),
+    paint(at(new THREE.IcosahedronGeometry(1.3, 0), -0.9, 3.4, -0.5), 0x62ad45)]),
+  bush: mergeGeometries([
+    paint(at(new THREE.IcosahedronGeometry(0.8, 0), 0, 0.45, 0), 0x3f8a3a),
+    paint(at(new THREE.IcosahedronGeometry(0.6, 0), 0.6, 0.35, 0.2), 0x4a9a40)]),
+  rock: (() => { const g = paint(new THREE.DodecahedronGeometry(1, 0), 0x8d8a84); const p = g.attributes.position, r = makeRng(5);
+    for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * (0.8 + r() * 0.3), p.getY(i) * 0.7, p.getZ(i) * (0.8 + r() * 0.3));
+    g.computeVertexNormals(); return g; })(),
+  flower: mergeGeometries([
+    paint(at(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 3), 0, 0.2, 0), 0x3d7a2a),
+    paint(at(new THREE.OctahedronGeometry(0.17, 0), 0, 0.45, 0), 0xffffff)]),
+  reed: mergeGeometries([0, 1, 2, 3].map(i => paint(at(new THREE.ConeGeometry(0.08, 1.3 + i * 0.25, 3), Math.cos(i * 1.7) * 0.3, 0.65 + i * 0.12, Math.sin(i * 1.7) * 0.3), 0x7c9a3d))),
+  lily: paint(at(new THREE.CylinderGeometry(0.7, 0.7, 0.05, 8), 0, 0.06, 0), 0x3f8f3a),
+};
+const vegMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+
+// ---------- 地形分块 ----------
+const CHUNK = 64, SEG = 32, RADIUS = 4;
+const chunks = new Map();
+const COL = { deep: new THREE.Color(0x8c7f5c), sand: new THREE.Color(0xdcc98f), grass: new THREE.Color(0x74b34c), grass2: new THREE.Color(0x9cc65a),
+  forest: new THREE.Color(0x3d7a34), rock: new THREE.Color(0x8b8780), rock2: new THREE.Color(0x6c6762), snow: new THREE.Color(0xf2f5f8), dirt: new THREE.Color(0xa08559) };
+const tmpC = new THREE.Color();
+function terrainColor(x, z, h, ny, out) {
+  const det = nDetail(x * 0.03, z * 0.03);
+  if (h < -0.2) return out.copy(COL.sand).lerp(COL.deep, smooth(-0.2, -3, h));
+  if (h < 0.9 + det * 0.4) return out.copy(COL.sand);
+  out.copy(COL.grass).lerp(COL.grass2, smooth(-0.4, 0.6, det));
+  out.lerp(COL.forest, smooth(0.0, 0.35, forestAt(x, z)) * 0.85);
+  out.lerp(COL.sand, smooth(1.6, 0.9, h));
+  const rockK = Math.max(smooth(0.84, 0.66, ny), smooth(24, 38, h + det * 4) * 0.8);
+  out.lerp(tmpC.copy(COL.rock).lerp(COL.rock2, smooth(-0.5, 0.5, det)), rockK);
+  out.lerp(COL.snow, smooth(40, 48, h + det * 4) * smooth(0.55, 0.78, ny));
+  const d = Math.abs(x - roadX(z));
+  if (d < ROAD_W * 0.5 + 3) out.lerp(COL.dirt, smooth(ROAD_W * 0.5 + 3, ROAD_W * 0.5 + 0.5, d) * (1 - bridgeK(z)));
+  return out;
+}
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
+function makeInst(geo, list, group) {
+  if (!list.length) return;
+  const im = new THREE.InstancedMesh(geo, vegMat, list.length);
+  list.forEach((o, i) => {
+    _e.set(o.tx || 0, o.ry, o.tz || 0); _q.setFromEuler(_e);
+    _m.compose(_p.set(o.x, o.y, o.z), _q, _s.set(o.sx || o.s, o.sy || o.s, o.sz || o.s));
+    im.setMatrixAt(i, _m);
+    im.setColorAt(i, tmpC.setRGB(o.c[0], o.c[1], o.c[2]));
+  });
+  im.instanceMatrix.needsUpdate = true;
+  group.add(im);
+}
+const FLOWER_COLS = [[1, 0.45, 0.5], [1, 0.85, 0.3], [0.75, 0.55, 1], [1, 1, 1], [1, 0.6, 0.25]];
+function buildChunk(cx, cz) {
+  const ox = cx * CHUNK, oz = cz * CHUNK;
+  const group = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(CHUNK, CHUNK, SEG, SEG);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, height(pos.getX(i) + ox, pos.getZ(i) + oz));
+  geo.computeVertexNormals();
+  const nrm = geo.attributes.normal, col = new Float32Array(pos.count * 3), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    terrainColor(pos.getX(i) + ox, pos.getZ(i) + oz, pos.getY(i), nrm.getY(i), c);
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const terrain = new THREE.Mesh(geo, terrainMat);
+  terrain.position.set(ox, 0, oz);
+  group.add(terrain);
+
+  // 植被
+  const r = makeRng((cx * 73856093) ^ (cz * 19349663) ^ SEED);
+  const L = { pine: [], broad: [], bush: [], rock: [], flower: [], reed: [], lily: [] }, colliders = [];
+  const v = (a = 0.12) => 1 - a + r() * a * 2;
+  for (let n = 0; n < 170; n++) {
+    const x = ox + (r() - 0.5) * CHUNK, z = oz + (r() - 0.5) * CHUNK;
+    const h = height(x, z), d = Math.abs(x - roadX(z));
+    if (d < ROAD_W * 0.5 + 1.5) continue;
+    const ry = r() * Math.PI * 2;
+    if (h < -0.3) {
+      if (h > -3.5 && riverVal(x, z) > 0.07 && r() < 0.05) L.lily.push({ x, y: WATER, z, ry, s: 0.7 + r() * 0.6, c: [v(), v(), v()] });
+      continue;
+    }
+    const slope = Math.abs(height(x + 1, z) - h) + Math.abs(height(x, z + 1) - h);
+    const f = forestAt(x, z), rv = riverVal(x, z);
+    if (h < 2.5 && rv < 0.1 && r() < 0.45) { L.reed.push({ x, y: h - 0.1, z, ry, s: 0.8 + r() * 0.6, c: [v(), v(), v()] }); continue; }
+    const pTree = smooth(-0.05, 0.4, f) * 0.8 + 0.035;
+    if (h > 1 && h < 40 && slope < 1.3 && r() < pTree) {
+      const s = 0.75 + r() * 0.85, pine = h > 15 || r() < 0.55;
+      (pine ? L.pine : L.broad).push({ x, y: h - 0.2, z, ry, s, sy: s * v(0.2), c: [v(), v(0.15), v()] });
+      colliders.push(x, z, 0.45 * s);
+      continue;
+    }
+    if (r() < 0.05 + (slope > 1.3 ? 0.25 : 0) + (h > 30 ? 0.1 : 0)) {
+      const s = 0.4 + r() * (h > 20 ? 2.6 : 1.4);
+      L.rock.push({ x, y: h - 0.2 * s, z, ry, tx: r() * 0.4, tz: r() * 0.4, s, sy: s * v(0.3), c: [v(0.08), v(0.08), v(0.08)] });
+      if (s > 0.9) colliders.push(x, z, 0.8 * s);
+      continue;
+    }
+    if (h > 1 && h < 30 && f > 0.05 && r() < 0.25) { L.bush.push({ x, y: h - 0.1, z, ry, s: 0.7 + r() * 0.8, c: [v(), v(), v()] }); continue; }
+    if (h > 1 && h < 22 && f < 0.12 && r() < 0.5) {
+      const fc = FLOWER_COLS[Math.floor(r() * FLOWER_COLS.length)], k = 3 + Math.floor(r() * 5);
+      for (let j = 0; j < k; j++) { const fx = x + (r() - 0.5) * 3, fz = z + (r() - 0.5) * 3; L.flower.push({ x: fx, y: height(fx, fz) - 0.05, z: fz, ry, s: 0.8 + r() * 0.6, c: fc }); }
+    }
+  }
+  for (const k in L) makeInst(GEO[k], L[k], group);
+  scene.add(group);
+  return { group, colliders };
+}
+function disposeChunk(ch) {
+  scene.remove(ch.group);
+  ch.group.traverse(o => { if (o.isInstancedMesh) o.dispose(); else if (o.isMesh) o.geometry.dispose(); });
+}
+// ---------- 道路（随前进自动生成） ----------
+const roadTex = (() => {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
+  const g = cv.getContext('2d'), r = makeRng(3);
+  g.fillStyle = '#8a7a63'; g.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 1400; i++) { const t = r(); g.fillStyle = `rgba(${t > 0.5 ? '255,245,220' : '60,45,30'},${0.08 + r() * 0.15})`; g.fillRect(r() * 64, r() * 256, 1 + r() * 2.5, 1 + r() * 2.5); }
+  g.fillStyle = '#c9b48d'; g.fillRect(0, 0, 5, 256); g.fillRect(59, 0, 5, 256);
+  g.fillStyle = 'rgba(255,250,235,0.55)'; for (let y = 0; y < 256; y += 64) g.fillRect(30, y + 8, 4, 34);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+})();
+const roadMat = new THREE.MeshLambertMaterial({ map: roadTex, vertexColors: true });
+const lampMat = new THREE.MeshLambertMaterial({ color: 0xfff1c0, emissive: 0xffc860, emissiveIntensity: 0 });
+const GEO_POST = paint(at(new THREE.BoxGeometry(0.22, 1.2, 0.22), 0, 0.6, 0), 0x7a5634);
+const GEO_RAIL = paint(new THREE.BoxGeometry(0.14, 0.14, 1), 0x8a6640);
+const GEO_PILLAR = paint(at(new THREE.CylinderGeometry(0.5, 0.6, 1, 8), 0, -0.5, 0), 0x9a958c);
+const GEO_LAMP = paint(at(new THREE.CylinderGeometry(0.08, 0.12, 3.6, 5), 0, 1.8, 0), 0x3a3631);
+const GEO_LAMPHEAD = at(new THREE.BoxGeometry(0.45, 0.5, 0.45), 0, 3.8, 0);
+const SEGL = 40, roads = new Map();
+function buildRoad(k) {
+  const z0 = k * SEGL, rows = SEGL / 2 + 1, group = new THREE.Group();
+  const P = [], U = [], C = [], I = [];
+  const posts = [], rails = [], pillars = [], lamps = [];
+  for (let j = 0; j < rows; j++) {
+    const z = z0 + j * 2, rx = roadX(z), y = roadH(z) + 0.06, b = bridgeK(z);
+    P.push(rx - ROAD_W / 2, y, z, rx + ROAD_W / 2, y, z);
+    U.push(0, z / 8, 1, z / 8);
+    const sh = lerp(1, 0.72, b); C.push(sh, sh * 0.92, sh * 0.85, sh, sh * 0.92, sh * 0.85);
+    if (j < rows - 1) { const a = j * 2; I.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    if (b > 0.35 && j < rows - 1) {
+      const zn = z + 2, rxn = roadX(zn), yn = roadH(zn) + 0.06, len = Math.hypot(rxn - rx, zn - z, yn - y);
+      const ang = Math.atan2(rxn - rx, zn - z), pitch = -Math.atan2(yn - y, Math.hypot(rxn - rx, zn - z));
+      for (const sx of [-1, 1]) {
+        const px = rx + sx * (ROAD_W / 2 - 0.1);
+        if (j % 2 === 0) posts.push({ x: px, y, z, ry: 0, s: 1, c: [1, 1, 1] });
+        rails.push({ x: (px + rxn + sx * (ROAD_W / 2 - 0.1)) / 2, y: (y + yn) / 2 + 1.05, z: z + 1, ry: ang, tx: pitch, s: 1, sz: len, c: [1, 1, 1] });
+      }
+      if (j % 6 === 0) for (const sx of [-1, 1]) pillars.push({ x: rx + sx * 2.2, y: y - 0.25, z, ry: 0, s: 1, sy: y + 5, c: [1, 1, 1] });
+    }
+    if (j % 15 === 0 && b < 0.2) { const side = ((z / 30) & 1) ? 1 : -1; lamps.push({ x: rx + side * (ROAD_W / 2 + 0.8), y: groundAt(rx + side * (ROAD_W / 2 + 0.8), z) - 0.1, z, ry: 0, s: 1, c: [1, 1, 1] }); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  geo.setIndex(I); geo.computeVertexNormals();
+  group.add(new THREE.Mesh(geo, roadMat));
+  makeInst(GEO_POST, posts, group); makeInst(GEO_RAIL, rails, group); makeInst(GEO_PILLAR, pillars, group); makeInst(GEO_LAMP, lamps, group);
+  if (lamps.length) { const im = new THREE.InstancedMesh(GEO_LAMPHEAD, lampMat, lamps.length); lamps.forEach((o, i) => { _m.makeTranslation(o.x, o.y, o.z); im.setMatrixAt(i, _m); }); group.add(im); }
+  scene.add(group);
+  return { group, colliders: [] };
+}
+// ---------- 角色（第三人称可见） ----------
+const hero = new THREE.Group();
+const heroMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+const part = (geo, hex, x, y, z) => { const m = new THREE.Mesh(paint(geo, hex), heroMat); m.position.set(x, y, z); hero.add(m); return m; };
+part(new THREE.BoxGeometry(0.55, 0.7, 0.32), 0xd9573b, 0, 1.15, 0);
+part(new THREE.IcosahedronGeometry(0.22, 1), 0xf1c9a5, 0, 1.68, 0);
+part(new THREE.CylinderGeometry(0.27, 0.3, 0.08, 10), 0x6b4a2b, 0, 1.86, 0);
+part(new THREE.BoxGeometry(0.42, 0.5, 0.2), 0x4c6b3c, 0, 1.18, 0.25);
+const limb = (hex, x, y, h) => { const g = new THREE.BoxGeometry(0.16, h, 0.16); g.translate(0, -h / 2, 0); return part(g, hex, x, y, 0); };
+const legL = limb(0x34405a, -0.14, 0.8, 0.8), legR = limb(0x34405a, 0.14, 0.8, 0.8);
+const armL = limb(0xd9573b, -0.36, 1.45, 0.62), armR = limb(0xd9573b, 0.36, 1.45, 0.62);
+hero.visible = false;
+scene.add(hero);
+
+// ---------- 玩家状态与输入 ----------
+const EYE = 1.7;
+const player = { x: roadX(0), z: 0, y: 0, vy: 0, yaw: 0, pitch: -0.05, ground: true, walked: 0, phase: 0 };
+player.y = groundAt(player.x, player.z);
+const keys = new Set();
+let autoWalk = false, thirdPerson = false, fastTime = false, started = false, tod = 8;
+const joy = { x: 0, y: 0, id: null }, look = { id: null, lx: 0, ly: 0 };
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (isTouch) document.body.classList.add('touch');
+const bAuto = document.getElementById('bAuto'), bTime = document.getElementById('bTime'), bView = document.getElementById('bView');
+function setAuto(v) { autoWalk = v; bAuto.setAttribute('aria-pressed', String(v)); }
+function setFast(v) { fastTime = v; bTime.setAttribute('aria-pressed', String(v)); }
+function setView(v) { thirdPerson = v; hero.visible = v; bView.setAttribute('aria-pressed', String(v)); }
+bAuto.onclick = () => setAuto(!autoWalk);
+bTime.onclick = () => setFast(!fastTime);
+bView.onclick = () => setView(!thirdPerson);
+document.getElementById('bNew').onclick = () => { const s = Math.floor(Math.random() * 1e6); localStorage.setItem('wild-seed', String(s)); location.search = '?seed=' + s; };
+addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const k = e.code; keys.add(k);
+  if (k === 'KeyF') setAuto(!autoWalk);
+  if (k === 'KeyT') setFast(!fastTime);
+  if (k === 'KeyV') setView(!thirdPerson);
+  if (k === 'Space' && started) e.preventDefault();
+});
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+function rotateView(dx, dy, sens) {
+  player.yaw -= dx * sens; player.pitch -= dy * sens;
+  player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch));
+}
+let dragging = false;
+canvas.addEventListener('mousedown', () => {
+  if (!started) return;
+  dragging = true;
+  if (!isTouch && document.pointerLockElement !== canvas && canvas.requestPointerLock) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
+});
+addEventListener('mouseup', () => { dragging = false; });
+addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === canvas) rotateView(e.movementX, e.movementY, 0.0022);
+  else if (dragging) rotateView(e.movementX, e.movementY, 0.004);
+});
+const joyEl = document.getElementById('joy'), joyK = document.getElementById('joyK');
+function joyMove(t) {
+  const r = joyEl.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  let dx = t.clientX - cx, dy = t.clientY - cy; const len = Math.hypot(dx, dy), max = r.width / 2;
+  if (len > max) { dx *= max / len; dy *= max / len; }
+  joy.x = dx / max; joy.y = dy / max; joyK.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+addEventListener('touchstart', (e) => {
+  for (const t of e.changedTouches) {
+    const r = joyEl.getBoundingClientRect();
+    if (joy.id === null && Math.hypot(t.clientX - (r.left + r.width / 2), t.clientY - (r.top + r.height / 2)) < r.width) { joy.id = t.identifier; joyMove(t); }
+    else if (look.id === null && t.target === canvas) { look.id = t.identifier; look.lx = t.clientX; look.ly = t.clientY; }
+  }
+}, { passive: true });
+addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joy.id) joyMove(t);
+    else if (t.identifier === look.id) { rotateView(t.clientX - look.lx, t.clientY - look.ly, 0.006); look.lx = t.clientX; look.ly = t.clientY; }
+  }
+}, { passive: true });
+addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joy.id) { joy.id = null; joy.x = joy.y = 0; joyK.style.transform = ''; }
+    if (t.identifier === look.id) look.id = null;
+  }
+});
+const jumpBtn = document.getElementById('jumpBtn');
+jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); keys.add('Space'); });
+jumpBtn.addEventListener('touchend', () => keys.delete('Space'));
+// ---------- 世界流式生成 ----------
+function updateWorld(budget) {
+  const pcx = Math.round(player.x / CHUNK), pcz = Math.round(player.z / CHUNK);
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw), need = [];
+  for (let dx = -RADIUS; dx <= RADIUS; dx++) for (let dz = -RADIUS; dz <= RADIUS; dz++) {
+    if (dx * dx + dz * dz > (RADIUS + 0.5) ** 2) continue;
+    const key = (pcx + dx) + ',' + (pcz + dz);
+    if (!chunks.has(key)) need.push({ key, cx: pcx + dx, cz: pcz + dz, p: Math.hypot(dx, dz) - (dx * fx + dz * fz) * 0.6 });
+  }
+  need.sort((a, b) => a.p - b.p);
+  for (let i = 0; i < Math.min(budget, need.length); i++) chunks.set(need[i].key, buildChunk(need[i].cx, need[i].cz));
+  for (const [key, ch] of chunks) {
+    const [cx, cz] = key.split(',').map(Number);
+    if (Math.hypot(cx - pcx, cz - pcz) > RADIUS + 1.6) { disposeChunk(ch); chunks.delete(key); }
+  }
+  const kz = Math.floor(player.z / SEGL), span = Math.ceil((RADIUS + 0.5) * CHUNK / SEGL);
+  let built = 0;
+  for (let d = 0; d <= span && built < Math.max(1, budget >> 1); d++) for (const k of d ? [kz - d, kz + d] : [kz]) {
+    if (!roads.has(k) && built < Math.max(1, budget >> 1)) { roads.set(k, buildRoad(k)); built++; }
+  }
+  for (const [k, rd] of roads) if (Math.abs(k - kz) > span + 2) { disposeChunk(rd); roads.delete(k); }
+}
+
+// ---------- 昼夜 ----------
+const SKY = { dayTop: new THREE.Color(0x3b86d8), nightTop: new THREE.Color(0x070f26), dayBot: new THREE.Color(0xc4e4f8), nightBot: new THREE.Color(0x141d36), dusk: new THREE.Color(0xf4a06a),
+  sunDay: new THREE.Color(0xfff1d6), sunDusk: new THREE.Color(0xffa060), moon: new THREE.Color(0x9fb4ff), hemiDay: new THREE.Color(0xcfe8ff), hemiNight: new THREE.Color(0x3a4a7a) };
+const sunDir = new THREE.Vector3(), fogCol = new THREE.Color();
+function updateSky() {
+  const a = (tod - 6) / 24 * Math.PI * 2, e = Math.sin(a);
+  sunDir.set(Math.cos(a) * 0.85, e, -0.4).normalize();
+  const dF = smooth(-0.12, 0.25, e), dusk = smooth(0.42, 0.02, Math.abs(e)) * smooth(-0.3, 0.02, e);
+  skyUni.top.value.copy(SKY.nightTop).lerp(SKY.dayTop, dF);
+  fogCol.copy(SKY.nightBot).lerp(SKY.dayBot, dF).lerp(SKY.dusk, dusk * 0.75);
+  skyUni.bottom.value.copy(fogCol);
+  scene.fog.color.copy(fogCol);
+  const night = e < -0.05;
+  const ld = night ? sunDir.clone().negate() : sunDir;
+  skyUni.sunDir.value.copy(ld);
+  skyUni.sunCol.value.copy(night ? SKY.moon : SKY.sunDay).multiplyScalar(night ? 0.6 : 1).lerp(SKY.sunDusk, night ? 0 : dusk);
+  sun.color.copy(night ? SKY.moon : SKY.sunDay).lerp(SKY.sunDusk, night ? 0 : dusk);
+  sun.intensity = night ? 0.35 * smooth(-0.05, -0.3, e) : 2.3 * smooth(-0.05, 0.2, e);
+  sun.position.set(player.x + ld.x * 200, player.y + ld.y * 200, player.z + ld.z * 200);
+  sun.target.position.set(player.x, player.y, player.z);
+  hemi.color.copy(SKY.hemiNight).lerp(SKY.hemiDay, dF);
+  hemi.intensity = lerp(0.35, 0.95, dF);
+  starMat.opacity = 1 - smooth(-0.25, 0.05, e);
+  lampMat.emissiveIntensity = (1 - dF) * 3;
+  cloudMat.emissive.setHex(0xffffff).lerp(SKY.dusk, dusk * 0.7).multiplyScalar(lerp(0.12, 0.6, dF));
+  waterMat.color.setHex(0x2f86b8).multiplyScalar(lerp(0.35, 1, dF));
+}
+// ---------- 移动与碰撞 ----------
+function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
+function collide() {
+  const pcx = Math.round(player.x / CHUNK), pcz = Math.round(player.z / CHUNK);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const ch = chunks.get((pcx + dx) + ',' + (pcz + dz)); if (!ch) continue;
+    const c = ch.colliders;
+    for (let i = 0; i < c.length; i += 3) {
+      const ddx = player.x - c[i], ddz = player.z - c[i + 1], rr = c[i + 2] + 0.35, d2 = ddx * ddx + ddz * ddz;
+      if (d2 < rr * rr && d2 > 1e-6) { const d = Math.sqrt(d2); player.x = c[i] + ddx / d * rr; player.z = c[i + 1] + ddz / d * rr; }
+    }
+  }
+}
+function updatePlayer(dt) {
+  let mf = 0, ms = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) mf += 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown')) mf -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) ms += 1;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) ms -= 1;
+  mf -= joy.y; ms += joy.x;
+  if (autoWalk) {
+    const dir = -Math.cos(player.yaw) <= 0 ? -1 : 1;
+    const tz = player.z + dir * 14, tx = roadX(tz);
+    const want = Math.atan2(-(tx - player.x), -(tz - player.z));
+    player.yaw += angDiff(player.yaw, want) * Math.min(1, dt * 2.2);
+    mf = Math.max(mf, 1);
+  }
+  const ground = groundAt(player.x, player.z), swim = ground < WATER - 1.0;
+  const run = keys.has('ShiftLeft') || keys.has('ShiftRight') || Math.hypot(joy.x, joy.y) > 0.95;
+  let speed = (run ? 17 : 8) * (swim ? 0.45 : 1);
+  const len = Math.hypot(mf, ms);
+  if (len > 1) { mf /= len; ms /= len; }
+  const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+  const vx = (-sy * mf + cy * ms) * speed, vz = (-cy * mf - sy * ms) * speed;
+  const ox = player.x, oz = player.z;
+  player.x += vx * dt; player.z += vz * dt;
+  collide();
+  const moved = Math.hypot(player.x - ox, player.z - oz);
+  player.walked += moved; player.phase += moved * 1.4;
+  const floor = swim ? WATER - 1.25 : groundAt(player.x, player.z);
+  if (keys.has('Space') && player.ground && !swim) { player.vy = 7.5; player.ground = false; }
+  player.vy -= 22 * dt; player.y += player.vy * dt;
+  if (player.y <= floor) { player.y = floor; player.vy = 0; player.ground = true; }
+  else if (player.ground && player.vy <= 0 && player.y - floor < 0.8) { player.y = floor; player.vy = 0; }
+  else player.ground = false;
+  return moved / Math.max(dt, 1e-4);
+}
+const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
+let camY = null; // 平滑后的视线高度：滤掉地表起伏带来的上下颠簸
+function updateCamera(spd, dt) {
+  const targetY = player.y + EYE;
+  if (camY === null || !started) camY = targetY;
+  else {
+    // 着地时用较慢的指数平滑吸收地面小起伏；跳跃/下落时跟得更紧，避免动作发飘
+    const rate = player.ground ? 5 : 14;
+    camY += (targetY - camY) * (1 - Math.exp(-rate * dt));
+    // 兜底：上坡时视线不低于地面 1.2m，不会钻进坡里
+    camY = Math.max(camY, player.y + 1.2);
+  }
+  const ex = player.x, ey = camY, ez = player.z;
+  const fx = -Math.sin(player.yaw) * Math.cos(player.pitch), fy = Math.sin(player.pitch), fz = -Math.cos(player.yaw) * Math.cos(player.pitch);
+  if (!thirdPerson) { camera.position.set(ex, ey, ez); camera.lookAt(ex + fx, ey + fy, ez + fz); }
+  else {
+    camPos.set(ex - fx * 7, ey + 1.2 - fy * 7, ez - fz * 7);
+    camPos.y = Math.max(camPos.y, groundAt(camPos.x, camPos.z) + 0.6, WATER + 0.4);
+    camera.position.lerp(camPos, Math.min(1, dt * 10));
+    camTarget.set(ex, ey - 0.2, ez); camera.lookAt(camTarget);
+  }
+  hero.position.set(player.x, player.y, player.z);
+  hero.rotation.y = player.yaw;
+  const sw = Math.sin(player.phase * 1.2) * Math.min(spd / 8, 1) * 0.7;
+  legL.rotation.x = sw; legR.rotation.x = -sw; armL.rotation.x = -sw * 0.8; armR.rotation.x = sw * 0.8;
+  sky.position.copy(camera.position); stars.position.copy(camera.position);
+  water.position.x = Math.round(player.x / 5) * 5; water.position.z = Math.round(player.z / 5) * 5;
+}
+// ---------- 小地图与 HUD ----------
+const mm = document.getElementById('minimap'), mg = mm.getContext('2d');
+const MMN = 50, MMS = 6, mmOff = document.createElement('canvas'); mmOff.width = mmOff.height = MMN;
+const mmCtx = mmOff.getContext('2d'), mmImg = mmCtx.createImageData(MMN, MMN);
+function mapColor(x, z) {
+  const h = height(x, z);
+  if (h < WATER) return [58, 140, 196];
+  if (h < 0.9) return [220, 201, 143];
+  if (h > 42) return [240, 243, 246];
+  if (h > 22) return [139, 135, 128];
+  const f = forestAt(x, z);
+  return f > 0.18 ? [52, 112, 48] : f > 0 ? [92, 156, 66] : [126, 186, 82];
+}
+function drawMinimap() {
+  const half = MMN / 2;
+  for (let j = 0; j < MMN; j++) for (let i = 0; i < MMN; i++) {
+    const c = mapColor(player.x + (i - half) * MMS, player.z + (j - half) * MMS), o = (j * MMN + i) * 4;
+    mmImg.data[o] = c[0]; mmImg.data[o + 1] = c[1]; mmImg.data[o + 2] = c[2]; mmImg.data[o + 3] = 255;
+  }
+  mmCtx.putImageData(mmImg, 0, 0);
+  const W = mm.width, k = W / (MMN * MMS);
+  mg.save(); mg.clearRect(0, 0, W, W);
+  mg.beginPath(); mg.arc(W / 2, W / 2, W / 2, 0, Math.PI * 2); mg.clip();
+  mg.imageSmoothingEnabled = true; mg.drawImage(mmOff, 0, 0, W, W);
+  mg.strokeStyle = 'rgba(120,92,60,0.95)'; mg.lineWidth = 3; mg.beginPath();
+  for (let z = -half * MMS; z <= half * MMS; z += 6) { const wz = player.z + z, px = W / 2 + (roadX(wz) - player.x) * k, py = W / 2 + z * k; z === -half * MMS ? mg.moveTo(px, py) : mg.lineTo(px, py); }
+  mg.stroke();
+  mg.translate(W / 2, W / 2); mg.rotate(-player.yaw);
+  mg.fillStyle = '#ff5a3c'; mg.strokeStyle = '#fff'; mg.lineWidth = 1.5;
+  mg.beginPath(); mg.moveTo(0, -8); mg.lineTo(6, 6); mg.lineTo(0, 3); mg.lineTo(-6, 6); mg.closePath(); mg.fill(); mg.stroke();
+  mg.restore();
+}
+const $ = (id) => document.getElementById(id);
+const DIRS = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+function updateHud() {
+  $('biome').textContent = biomeAt(player.x, player.z);
+  $('dist').textContent = Math.floor(player.walked).toLocaleString();
+  $('alt').textContent = Math.max(0, player.y).toFixed(0);
+  const hh = Math.floor(tod), mi = Math.floor((tod - hh) * 60);
+  $('clock').textContent = String(hh).padStart(2, '0') + ':' + String(mi).padStart(2, '0');
+  const deg = ((-player.yaw * 180 / Math.PI) % 360 + 360) % 360;
+  $('compass').textContent = DIRS[Math.round(deg / 45) % 8] + ' ' + Math.round(deg) + '°';
+}
+
+// ---------- 主循环 ----------
+const clock = new THREE.Clock();
+let hudT = 0, mapT = 0, time = 0;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  time += dt;
+  let spd = 0;
+  if (started) spd = updatePlayer(dt);
+  else { player.yaw += dt * 0.05; }
+  tod = (tod + dt * (fastTime ? 0.8 : 0.02)) % 24;
+  updateWorld(started ? 2 : 4);
+  updateCamera(spd, dt);
+  updateSky();
+  waterUni.uTime.value = time;
+  for (const c of cloudGroup.children) {
+    c.position.x += dt * 2.5;
+    const dx = c.position.x - player.x, dz = c.position.z - player.z;
+    if (dx > 450) c.position.x -= 900; else if (dx < -450) c.position.x += 900;
+    if (dz > 450) c.position.z -= 900; else if (dz < -450) c.position.z += 900;
+  }
+  if ((hudT += dt) > 0.2) { hudT = 0; updateHud(); }
+  if ((mapT += dt) > 0.4) { mapT = 0; drawMinimap(); }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+const goBtn = $('go');
+$('loading').textContent = '世界已就绪 · 种子 ' + SEED;
+goBtn.onclick = () => {
+  started = true; $('start').style.display = 'none';
+  if (!isTouch && canvas.requestPointerLock) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
+};
+goBtn.focus();
+window.__wild = { player, chunks, roads, setAuto, height, camera };
+frame();
+})().catch((err) => { document.getElementById('loading').textContent = '引擎加载失败，请检查网络后刷新：' + err.message; });
+</script>
+</body>
+</html>

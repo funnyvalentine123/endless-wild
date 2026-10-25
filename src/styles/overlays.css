@@ -1,0 +1,81 @@
+#start {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(20, 40, 30, 0.35), rgba(5, 15, 20, 0.75));
+  z-index: 10;
+}
+
+#start .card {
+  max-width: 440px;
+  width: calc(100% - 40px);
+  padding: 30px 28px;
+  text-align: center;
+}
+
+#start h1 {
+  font-size: 30px;
+  letter-spacing: 6px;
+  margin-bottom: 8px;
+}
+
+#start p {
+  font-size: 14px;
+  opacity: 0.9;
+  line-height: 1.8;
+  margin-bottom: 6px;
+}
+
+#start .keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  text-align: left;
+  font-size: 13px;
+  margin: 16px auto 22px;
+  width: fit-content;
+}
+
+#start kbd {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+#go {
+  border: 0;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 12px 40px;
+  border-radius: 30px;
+  background: linear-gradient(135deg, #ffd166, #f39c3d);
+  color: #3a2200;
+  box-shadow: 0 6px 20px rgba(243, 156, 61, 0.45);
+}
+
+#go:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+#loading {
+  font-size: 13px;
+  opacity: 0.8;
+  margin-top: 12px;
+}
+
+noscript {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0b1a20;
+  color: #fff;
+  z-index: 20;
+}

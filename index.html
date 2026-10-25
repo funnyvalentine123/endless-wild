@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#9fd0f0" />
+  <meta name="description" content="无尽山野：一个无限程序化生成的 3D 自由探索小游戏。" />
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <title>无尽山野 · 3D 自由探索</title>
+</head>
+<body>
+  <canvas id="c" aria-label="3D 自由探索场景"></canvas>
+  <div id="cross" aria-hidden="true"></div>
+
+  <div id="hud" class="panel" aria-live="polite">
+    <div class="title">无尽山野</div>
+    <div>所在：<span id="biome">草原</span></div>
+    <div>已行进：<b id="dist">0</b> 米</div>
+    <div>海拔：<b id="alt">0</b> 米 · 时刻 <b id="clock">08:00</b></div>
+    <div>世界种子：<b id="seed">-</b></div>
+  </div>
+
+  <div id="mapWrap" class="panel">
+    <canvas id="minimap" width="150" height="150" aria-label="小地图"></canvas>
+    <div id="compass">N</div>
+    <button id="mapOpen" type="button" aria-haspopup="dialog" aria-expanded="false">大地图 (M)</button>
+  </div>
+
+  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · M 大地图 · Esc 释放鼠标</div>
+
+  <nav id="bar" class="panel" aria-label="游戏操作">
+    <button id="bAuto" type="button" aria-pressed="false">自动前进 (F)</button>
+    <button id="bTime" type="button" aria-pressed="false">时间流逝 (T)</button>
+    <button id="bView" type="button" aria-pressed="false">第三人称 (V)</button>
+    <button id="bNew" type="button">新世界</button>
+  </nav>
+
+  <div id="joy" aria-hidden="true"><div id="joyK"></div></div>
+  <button id="jumpBtn" type="button" aria-label="跳跃">跳</button>
+
+  <div id="start">
+    <div class="card panel">
+      <h1>无尽山野</h1>
+      <p>一条没有尽头的小路，向前走，世界会在你脚下生长。</p>
+      <p>森林、河流、山坡与湖泊 —— 每一步都是新的风景。</p>
+      <div class="keys">
+        <kbd>W A S D</kbd><span>前后左右移动</span>
+        <kbd>鼠标</kbd><span>环顾四周（点击画面锁定）</span>
+        <kbd>Shift</kbd><span>奔跑</span>
+        <kbd>空格</kbd><span>跳跃</span>
+        <kbd>F</kbd><span>沿着道路自动前进</span>
+        <kbd>T / V</kbd><span>时间流逝 / 切换视角</span>
+        <kbd>M</kbd><span>打开 3km 范围大地图</span>
+      </div>
+      <button id="go" type="button">开始探索</button>
+      <div id="loading">正在加载引擎…</div>
+    </div>
+  </div>
+
+  <div id="bigMap" class="big-map-overlay" hidden>
+    <section class="big-map-card panel" role="dialog" aria-modal="true" aria-labelledby="bigMapTitle">
+      <header class="big-map-head">
+        <div>
+          <h2 id="bigMapTitle">大地图</h2>
+          <p id="bigMapMeta" class="big-map-meta"></p>
+        </div>
+        <button id="bigMapClose" class="big-map-close" type="button" aria-label="关闭大地图">×</button>
+      </header>
+      <div class="big-map-viewport">
+        <canvas id="bigMapCanvas" width="512" height="512" aria-label="3000 米范围大地图"></canvas>
+        <div id="bigMapLoading" class="big-map-loading" aria-live="polite">正在绘制大地图…</div>
+      </div>
+      <footer class="big-map-foot">
+        <span id="bigMapCoords"></span>
+        <span>网格 500m · 北向上</span>
+      </footer>
+    </section>
+  </div>
+
+  <noscript>本游戏需要启用 JavaScript 与 WebGL。</noscript>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

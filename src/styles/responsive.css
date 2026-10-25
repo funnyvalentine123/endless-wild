@@ -1,0 +1,17 @@
+@media (max-width: 640px) {
+  #hud {
+    font-size: 12px;
+    min-width: 0;
+    padding: 8px 12px;
+  }
+
+  #minimap {
+    width: 100px;
+    height: 100px;
+  }
+
+  #bar button {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
