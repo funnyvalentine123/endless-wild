@@ -34,19 +34,20 @@ export const WEATHER_FOG_FAR = 90;
 export const RAIN_FOG_COLOR = 0x8b9aa6;
 export const SNOW_FOG_COLOR = 0xd3dfe8;
 
-/** 雨天水位上涨上限与速度（米、米/秒）。 */
-export const WEATHER_WATER_RISE_MAX = 0.24;
-export const WEATHER_WATER_RISE_RATE = 0.0025;
-export const WEATHER_WATER_RECEDE_RATE = 0.0015;
+/** 雨天水位上涨上限与速度（米、米/游戏小时）；上限低于公路和房屋地基，不会淹到建筑。 */
+export const WEATHER_WATER_RISE_MAX = 2.4;
+export const WEATHER_WATER_RISE_PER_HOUR = 1.8;
+export const WEATHER_WATER_RECEDE_PER_HOUR = 0.8;
 
-/** 雪天积雪覆盖目标与累积/融化速度（0–1、1/秒）。 */
+/** 积雪覆盖目标与累积速度（0–1、1/游戏小时）；晴天在 2 个游戏小时内完全融化。 */
 export const WEATHER_SNOW_COVER: Record<WeatherLevel, number> = {
   light: 0.3,
   medium: 0.6,
   heavy: 0.85,
 };
-export const WEATHER_SNOW_RATE = 0.005;
-export const WEATHER_SNOW_MELT_RATE = 0.003;
+export const WEATHER_SNOW_PER_HOUR = 0.25;
+export const WEATHER_SNOW_MELT_HOURS = 2;
+export const WEATHER_SNOW_MELT_PER_HOUR = 1 / WEATHER_SNOW_MELT_HOURS;
 
 /** 天气系统对外暴露的可变快照，避免每帧分配对象。 */
 export interface WeatherSnapshot {

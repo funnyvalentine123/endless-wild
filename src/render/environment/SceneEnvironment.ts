@@ -8,8 +8,10 @@ import {
   type WeatherSnapshot,
 } from '../../config/weather';
 import { lerp } from '../../math/scalar';
+import type { PlayerState } from '../../player/Player';
 import type { DaylightSnapshot } from './Daylight';
 import { Clouds } from './Clouds';
+import { Flashlight } from './Flashlight';
 import { Lighting } from './Lighting';
 import { Precipitation } from './Precipitation';
 import { SkyDome } from './SkyDome';
@@ -29,6 +31,7 @@ export class SceneEnvironment {
   private readonly water: Water;
   private readonly clouds: Clouds;
   private readonly precipitation: Precipitation;
+  private readonly flashlight: Flashlight;
   private readonly fogTint = new Color();
   private starOpacity = 0;
 
@@ -39,6 +42,7 @@ export class SceneEnvironment {
     this.water = new Water(scene);
     this.clouds = new Clouds(scene);
     this.precipitation = new Precipitation(scene);
+    this.flashlight = new Flashlight(scene);
   }
 
   applyDaylight(daylight: DaylightSnapshot, x: number, y: number, z: number): void {
@@ -74,6 +78,11 @@ export class SceneEnvironment {
     this.precipitation.applyWeather(weather);
   }
 
+  /** 夜间手电筒跟随主角的朝向与俯仰。 */
+  applyFlashlight(daylight: DaylightSnapshot, state: PlayerState): void {
+    this.flashlight.update(daylight, state);
+  }
+
   update(
     dt: number,
     elapsed: number,
@@ -89,6 +98,7 @@ export class SceneEnvironment {
   }
 
   dispose(): void {
+    this.flashlight.dispose();
     this.precipitation.dispose();
     this.clouds.dispose();
     this.water.dispose();

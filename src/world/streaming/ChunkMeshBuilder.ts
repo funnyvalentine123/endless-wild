@@ -96,6 +96,7 @@ export class ChunkMeshBuilder {
         cz,
         this.world,
         this.materials.vegetation,
+        this.materials.window,
       );
       group.add(built.mesh);
       site = built.site;

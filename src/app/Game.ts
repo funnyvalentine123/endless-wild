@@ -195,8 +195,9 @@ export class Game {
     this.elapsed += dt;
 
     // 天气先推进，让玩家物理和水面使用本帧的新水位。
-    this.weather.update(dt, this.fastTime ? FAST_TIME_SCALE : NORMAL_TIME_SCALE);
-    this.weatherEffects.update(dt, this.weather.snapshot);
+    const hoursPerSecond = this.fastTime ? FAST_TIME_SCALE : NORMAL_TIME_SCALE;
+    this.weather.update(dt, hoursPerSecond);
+    this.weatherEffects.update(dt, this.weather.snapshot, hoursPerSecond);
     this.materials.setSnowCoverage(this.weatherEffects.snowCoverage);
 
     const waterLevel = WATER_LEVEL + this.weatherEffects.waterLevelOffset;
@@ -222,9 +223,11 @@ export class Game {
     this.cameraRig.update(state, this.started, this.thirdPerson, dt);
 
     const daylight = this.dayNight.snapshot;
+    this.materials.setWindowIntensity(daylight.lampIntensity);
     this.materials.setLampIntensity(daylight.lampIntensity);
     this.environment.applyDaylight(daylight, state.x, state.y, state.z);
     this.environment.applyWeather(this.weather.snapshot, this.weatherEffects.waterLevelOffset);
+    this.environment.applyFlashlight(daylight, state);
     this.environment.update(
       dt,
       this.elapsed,

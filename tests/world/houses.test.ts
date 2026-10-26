@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WEATHER_WATER_RISE_MAX } from '../../src/config/weather';
 import { CHUNK_SIZE, WATER_LEVEL } from '../../src/config/world';
 import { World } from '../../src/world/World';
 import {
@@ -37,7 +38,8 @@ describe('固定房屋', () => {
         const min = Math.min(...heights);
         const max = Math.max(...heights);
 
-        expect(min).toBeGreaterThan(WATER_LEVEL + 0.7);
+        // 暴雨把水位抬到上限后，房屋地基与周围院落仍应保持在水面之上。
+        expect(min).toBeGreaterThan(WATER_LEVEL + WEATHER_WATER_RISE_MAX + 0.2);
         expect(max - min).toBeLessThanOrEqual(1.2);
         expect(house.y).toBeGreaterThanOrEqual(max);
 
@@ -53,7 +55,7 @@ describe('固定房屋', () => {
             );
           }
         }
-        expect(Math.min(...broad)).toBeGreaterThan(WATER_LEVEL + 0.4);
+        expect(Math.min(...broad)).toBeGreaterThan(WATER_LEVEL + WEATHER_WATER_RISE_MAX - 0.2);
         expect(Math.max(...broad) - Math.min(...broad)).toBeLessThanOrEqual(2.6);
 
         const again = findHousePlacement(world, seed, Math.floor(house.x / CHUNK_SIZE), Math.floor(house.z / CHUNK_SIZE));

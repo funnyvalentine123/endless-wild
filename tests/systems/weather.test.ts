@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { NORMAL_TIME_SCALE } from '../../src/config/daynight';
 import {
   formatWeatherLabel,
   WEATHER_FADE_SECONDS,
   WEATHER_INITIAL_CLEAR_HOURS,
   WEATHER_LEVEL_VALUE,
   WEATHER_SNOW_COVER,
+  WEATHER_SNOW_MELT_HOURS,
   WEATHER_WATER_RISE_MAX,
   type WeatherSnapshot,
 } from '../../src/config/weather';
 import { WeatherEffects } from '../../src/systems/WeatherEffects';
 import { WeatherSystem } from '../../src/systems/WeatherSystem';
+
+/** 把“游戏小时”换算成正常速度下的真实秒数。 */
+function secondsForHours(hours: number): number {
+  return hours / NORMAL_TIME_SCALE;
+}
 
 function createRandom(values: number[]): () => number {
   let index = 0;
@@ -98,29 +105,43 @@ function snapshot(
 }
 
 describe('WeatherEffects', () => {
-  it('雨天水位缓慢上涨并停在合理上限内', () => {
+  it('雨天水位明显上涨并停在合理上限内', () => {
     const effects = new WeatherEffects();
-    effects.update(100, snapshot('rain', 'medium'));
+    effects.update(secondsForHours(8), snapshot('rain', 'medium'), NORMAL_TIME_SCALE);
 
-    expect(effects.waterLevelOffset).toBeGreaterThan(0);
+    expect(effects.waterLevelOffset).toBeGreaterThan(0.2);
     expect(effects.waterLevelOffset).toBeLessThanOrEqual(WEATHER_WATER_RISE_MAX);
+
+    // 持续大雨也不会无限上涨。
+    effects.update(secondsForHours(48), snapshot('rain', 'heavy'), NORMAL_TIME_SCALE);
+    expect(effects.waterLevelOffset).toBeCloseTo(WEATHER_WATER_RISE_MAX);
   });
 
-  it('晴天水位与积雪都会慢慢退回', () => {
+  it('雪停后两个游戏小时内完全融化，水位也会慢慢退回', () => {
     const effects = new WeatherEffects();
-    effects.update(400, snapshot('snow', 'heavy'));
+    effects.update(secondsForHours(8), snapshot('snow', 'heavy'), NORMAL_TIME_SCALE);
     expect(effects.snowCoverage).toBeCloseTo(WEATHER_SNOW_COVER.heavy);
 
-    effects.update(1000, snapshot('clear', 'light'));
+    effects.update(
+      secondsForHours(WEATHER_SNOW_MELT_HOURS),
+      snapshot('clear', 'light'),
+      NORMAL_TIME_SCALE,
+    );
     expect(effects.snowCoverage).toBe(0);
-    expect(effects.waterLevelOffset).toBe(0);
+
+    const rainy = new WeatherEffects();
+    rainy.update(secondsForHours(8), snapshot('rain', 'heavy'), NORMAL_TIME_SCALE);
+    expect(rainy.waterLevelOffset).toBeGreaterThan(0);
+
+    rainy.update(secondsForHours(48), snapshot('clear', 'light'), NORMAL_TIME_SCALE);
+    expect(rainy.waterLevelOffset).toBe(0);
   });
 
   it('大雨水位上涨比小雨多', () => {
     const light = new WeatherEffects();
     const heavy = new WeatherEffects();
-    light.update(80, snapshot('rain', 'light'));
-    heavy.update(80, snapshot('rain', 'heavy'));
+    light.update(secondsForHours(1), snapshot('rain', 'light'), NORMAL_TIME_SCALE);
+    heavy.update(secondsForHours(1), snapshot('rain', 'heavy'), NORMAL_TIME_SCALE);
 
     expect(heavy.waterLevelOffset).toBeGreaterThan(light.waterLevelOffset);
   });

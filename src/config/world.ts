@@ -4,6 +4,8 @@ export const WORLD_SEED_MAX = 1_000_000;
 
 export const WATER_LEVEL = 0;
 export const ROAD_WIDTH = 6;
+/** 公路与桥面的最低高度：暴雨最高水位为 2.4m，保持路面在洪水之上。 */
+export const ROAD_MIN_HEIGHT = 3.4;
 
 export const CHUNK_SIZE = 64;
 export const CHUNK_SEGMENTS = 32;

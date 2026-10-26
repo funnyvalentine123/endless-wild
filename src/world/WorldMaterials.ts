@@ -6,6 +6,7 @@ export class WorldMaterials {
   readonly terrain: MeshLambertMaterial;
   readonly vegetation: MeshLambertMaterial;
   readonly road: MeshLambertMaterial;
+  readonly window: MeshLambertMaterial;
   readonly lamp: MeshLambertMaterial;
 
   private readonly roadTexture: CanvasTexture;
@@ -17,6 +18,12 @@ export class WorldMaterials {
 
     this.roadTexture = createRoadTexture();
     this.road = new MeshLambertMaterial({ map: this.roadTexture, vertexColors: true });
+
+    this.window = new MeshLambertMaterial({
+      color: 0x9bc8d6,
+      emissive: 0xffc46a,
+      emissiveIntensity: 0,
+    });
 
     this.lamp = new MeshLambertMaterial({
       color: 0xfff1c0,
@@ -35,7 +42,12 @@ export class WorldMaterials {
     this.snowCoverage.value = Math.min(1, Math.max(0, amount));
   }
 
-  /** 夜间路灯亮度由昼夜系统推导，再写回共享材质。 */
+  /** 夜间窗户亮度由昼夜系统推导，再写回共享材质。 */
+  setWindowIntensity(intensity: number): void {
+    this.window.emissiveIntensity = intensity * 0.8;
+  }
+
+  /** 夜间路灯灯头亮度，与窗户一样由昼夜系统驱动。 */
   setLampIntensity(intensity: number): void {
     this.lamp.emissiveIntensity = intensity;
   }
@@ -63,6 +75,7 @@ export class WorldMaterials {
     this.terrain.dispose();
     this.vegetation.dispose();
     this.road.dispose();
+    this.window.dispose();
     this.lamp.dispose();
     this.roadTexture.dispose();
   }

@@ -82,6 +82,20 @@ function paintedBox(
   return paintGeometry(geometry, hex);
 }
 
+/** 窗户单独合批，夜间用共享发光材质点亮，不参与积雪着色。 */
+function windowBox(
+  width: number,
+  height: number,
+  depth: number,
+  x: number,
+  y: number,
+  z: number,
+): BufferGeometry {
+  const geometry = new BoxGeometry(width, height, depth);
+  geometry.translate(x, y, z);
+  return geometry;
+}
+
 function paintedTriangle(
   points: ReadonlyArray<readonly [number, number, number]>,
   hex: number,
@@ -142,7 +156,8 @@ export function findHousePlacement(
 
     const minHeight = Math.min(...heights);
     const maxHeight = Math.max(...heights);
-    if (minHeight < WATER_LEVEL + 0.8) continue;
+    // 留出雨水上涨上限的余量，避免暴雨后房子泡在水里。
+    if (minHeight < WATER_LEVEL + 2.9) continue;
     if (maxHeight - minHeight > 1.2) continue;
 
     const broadHeights: number[] = [];
@@ -156,7 +171,7 @@ export function findHousePlacement(
     }
     const broadMin = Math.min(...broadHeights);
     const broadMax = Math.max(...broadHeights);
-    if (broadMin < WATER_LEVEL + 0.5) continue;
+    if (broadMin < WATER_LEVEL + 2.6) continue;
     if (broadMax - broadMin > 2.6) continue;
 
     const side = x >= world.roadX(z) ? 1 : -1;
@@ -174,6 +189,7 @@ export function createHouse(
   cz: number,
   world: World,
   material: Material,
+  windowMaterial: Material,
 ): HouseBuild {
   const random = createRandom(mix32(hashChunk(seed ^ HOUSE_VARIANT_SALT, cx, cz)));
   const wallBottom = 0.2;
@@ -205,18 +221,19 @@ export function createHouse(
 
   const windowRows = stories === 1 ? [2.75] : [2.45, 5.05];
   const windowX = width * 0.27;
+  const windowParts: BufferGeometry[] = [];
   for (const rowY of windowRows) {
     for (const x of [-windowX, windowX]) {
-      parts.push(paintedBox(0.95, 1.0, 0.12, x, rowY, depth / 2 + 0.07, 0x9bc8d6));
+      windowParts.push(windowBox(0.95, 1.0, 0.12, x, rowY, depth / 2 + 0.07));
       parts.push(
         paintedBox(0.18, 1.12, 0.08, x - 0.62, rowY, depth / 2 + 0.1, style.shutterColor),
         paintedBox(0.18, 1.12, 0.08, x + 0.62, rowY, depth / 2 + 0.1, style.shutterColor),
       );
     }
     for (const z of [-depth * 0.22, depth * 0.22]) {
-      parts.push(
-        paintedBox(0.12, 1.0, 0.9, width / 2 + 0.07, rowY, z, 0x9bc8d6),
-        paintedBox(0.12, 1.0, 0.9, -width / 2 - 0.07, rowY, z, 0x9bc8d6),
+      windowParts.push(
+        windowBox(0.12, 1.0, 0.9, width / 2 + 0.07, rowY, z),
+        windowBox(0.12, 1.0, 0.9, -width / 2 - 0.07, rowY, z),
       );
     }
   }
@@ -294,6 +311,10 @@ export function createHouse(
   const mesh = new Mesh(mergeGeometries(parts), material);
   mesh.position.set(placement.x, placement.y, placement.z);
   mesh.rotation.y = placement.rotation;
+
+  if (windowParts.length > 0) {
+    mesh.add(new Mesh(mergeGeometries(windowParts), windowMaterial));
+  }
 
   const frontHomeZ = depth / 2 + 3.2;
   const doorX = placement.x + Math.sin(placement.rotation) * frontHomeZ;

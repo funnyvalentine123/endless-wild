@@ -28,6 +28,18 @@ export const CAMERA_GROUND_SMOOTHING = 5;
 export const CAMERA_AIR_SMOOTHING = 14;
 export const CAMERA_MIN_CLEARANCE = 1.2;
 
+/** 夜间手电筒：从眼睛略下方照向前方，光斑大、照射远，照到地面的区域接近白天亮度。 */
+export const FLASHLIGHT_DISTANCE = 78;
+/** 约 57° 的总张角，覆盖前方一大片路面。 */
+export const FLASHLIGHT_ANGLE = 0.52;
+export const FLASHLIGHT_PENUMBRA = 0.45;
+/** 亮度随照射距离一起增加，保证远处光斑仍接近白天亮度。 */
+export const FLASHLIGHT_INTENSITY = 82;
+export const FLASHLIGHT_HEIGHT = 1.55;
+export const FLASHLIGHT_AIM_DISTANCE = 18;
+/** 手电筒略微下压，让光斑中心落在前方二十米左右的路面上而不是地平线。 */
+export const FLASHLIGHT_DOWN_TILT = 0.085;
+
 export const THIRD_PERSON_DISTANCE = 7;
 export const THIRD_PERSON_HEIGHT = 1.2;
 export const THIRD_PERSON_LOOK_DROP = 0.2;

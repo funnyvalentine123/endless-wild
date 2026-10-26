@@ -2,6 +2,7 @@ import {
   ROAD_HEIGHT_CACHE_LIMIT,
   ROAD_HEIGHT_SAMPLE_SPACING,
   ROAD_HEIGHT_SAMPLE_STEPS,
+  ROAD_MIN_HEIGHT,
 } from '../config/world';
 import type { Noise2D } from '../math/noise';
 import { lerp, smoothstep } from '../math/scalar';
@@ -47,7 +48,7 @@ export class RoadTrack {
     let samples = 0;
     for (let i = -ROAD_HEIGHT_SAMPLE_STEPS; i <= ROAD_HEIGHT_SAMPLE_STEPS; i++) {
       const z = k + i * ROAD_HEIGHT_SAMPLE_SPACING;
-      sum += Math.max(this.rawHeight(this.roadX(z), z), 2.4);
+      sum += Math.max(this.rawHeight(this.roadX(z), z), ROAD_MIN_HEIGHT);
       samples++;
     }
 

@@ -23,8 +23,8 @@ export interface SmokeEmitter {
   puffs: SmokePuff[];
 }
 
-const MAX_PUFFS = 160;
-const PUFFS_PER_CHIMNEY = 5;
+const MAX_PUFFS = 320;
+const PUFFS_PER_CHIMNEY = 8;
 
 const VERTEX_SHADER = /* glsl */ `
   attribute float aAlpha;
@@ -34,7 +34,7 @@ const VERTEX_SHADER = /* glsl */ `
   void main() {
     vAlpha = aAlpha;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * (320.0 / max(1.0, -mvPosition.z));
+    gl_PointSize = aSize * (380.0 / max(1.0, -mvPosition.z));
     gl_Position = projectionMatrix * mvPosition;
   }
 `;
@@ -45,15 +45,16 @@ const FRAGMENT_SHADER = /* glsl */ `
   void main() {
     vec2 centered = gl_PointCoord - 0.5;
     float distanceToCenter = length(centered);
-    float alpha = smoothstep(0.5, 0.08, distanceToCenter) * vAlpha;
+    float alpha = smoothstep(0.5, 0.05, distanceToCenter) * vAlpha;
     if (alpha < 0.01) discard;
-    gl_FragColor = vec4(0.84, 0.86, 0.88, alpha);
+    gl_FragColor = vec4(0.8, 0.82, 0.85, alpha);
   }
 `;
 
 /**
  * 所有烟囱共用一个 Points 对象和一笔 draw call。
- * 每个烟囱只维护 5 个轻量烟雾粒子，上升、扩散、淡出后循环。
+ * 每个烟囱维护少量烟雾粒子，上升、扩散、淡出后循环；
+ * 粒子尺寸和透明度偏大，保证在远处和夜间也能看清。
  */
 export class SmokeSystem {
   private readonly geometry = new BufferGeometry();
@@ -97,12 +98,12 @@ export class SmokeSystem {
   addEmitter(x: number, y: number, z: number): SmokeEmitter {
     const puffs: SmokePuff[] = [];
     for (let index = 0; index < PUFFS_PER_CHIMNEY; index++) {
-      const life = 2.6 + Math.random() * 1.6;
+      const life = 3.4 + Math.random() * 2.2;
       puffs.push({
         age: Math.random() * life,
         life,
-        offsetX: (Math.random() - 0.5) * 0.45,
-        offsetZ: (Math.random() - 0.5) * 0.45,
+        offsetX: (Math.random() - 0.5) * 0.8,
+        offsetZ: (Math.random() - 0.5) * 0.8,
         phase: Math.random() * Math.PI * 2,
       });
     }
@@ -126,21 +127,21 @@ export class SmokeSystem {
         puff.age += dt;
         if (puff.age >= puff.life) {
           puff.age -= puff.life;
-          puff.life = 2.6 + Math.random() * 1.6;
-          puff.offsetX = (Math.random() - 0.5) * 0.45;
-          puff.offsetZ = (Math.random() - 0.5) * 0.45;
+          puff.life = 3.4 + Math.random() * 2.2;
+          puff.offsetX = (Math.random() - 0.5) * 0.8;
+          puff.offsetZ = (Math.random() - 0.5) * 0.8;
           puff.phase = Math.random() * Math.PI * 2;
         }
 
         const t = puff.age / puff.life;
-        const swirl = 0.2 + t * 0.8;
+        const swirl = 0.35 + t * 1.5;
         this.positions[count * 3] =
           emitter.x + puff.offsetX + Math.sin(puff.phase + puff.age * 1.1) * swirl;
-        this.positions[count * 3 + 1] = emitter.y + t * 4.2;
+        this.positions[count * 3 + 1] = emitter.y + t * 6.5;
         this.positions[count * 3 + 2] =
           emitter.z + puff.offsetZ + Math.cos(puff.phase + puff.age * 0.9) * swirl;
-        this.alphas[count] = Math.sin(t * Math.PI) * 0.38;
-        this.sizes[count] = 0.75 + t * 1.5;
+        this.alphas[count] = Math.sin(t * Math.PI) * 0.6;
+        this.sizes[count] = 1.5 + t * 3.0;
         count++;
       }
     }
