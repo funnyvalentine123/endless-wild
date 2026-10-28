@@ -4,6 +4,7 @@ import type { InputAction } from '../input/types';
 import { GameLoop } from '../core/GameLoop';
 import { requireElement } from '../core/dom';
 import { FAST_TIME_SCALE, NORMAL_TIME_SCALE } from '../config/daynight';
+import { DESERT } from '../config/desert';
 import { WATER_LEVEL } from '../config/world';
 import {
   formatWeatherLabel,
@@ -31,6 +32,8 @@ import { WorldMaterials } from '../world/WorldMaterials';
 import { RoadPropAssets } from '../world/assets/RoadPropAssets';
 import { VegetationAssets } from '../world/assets/VegetationAssets';
 import { buildSeedUrl, createRandomWorldSeed, persistWorldSeed, resolveWorldSeed } from '../world/seed';
+import { findNearestDesertEdge } from '../world/desertTravel';
+import { findNearestOasisEdge } from '../world/oasisTravel';
 import { WildlifeManager } from '../wildlife/WildlifeManager';
 import { ChunkMeshBuilder } from '../world/streaming/ChunkMeshBuilder';
 import { RoadMeshBuilder } from '../world/streaming/RoadMeshBuilder';
@@ -74,6 +77,8 @@ export class Game {
   private thirdPerson = false;
   private mapOpen = false;
   private elapsed = 0;
+  private desertFactor = 0;
+  private uiWeatherBlocked = false;
   private uiWeatherKind: WeatherKind | null = null;
   private uiWeatherLevel: WeatherLevel | null = null;
   private uiWeatherAuto: boolean | null = null;
@@ -116,6 +121,8 @@ export class Game {
     this.dayNight = new DayNightCycle();
     this.weather = new WeatherSystem();
     this.weatherEffects = new WeatherEffects();
+    this.desertFactor = this.world.desertAt(this.player.state.x, this.player.state.z);
+    this.weather.setDesertFactor(this.desertFactor);
 
     this.hud = new Hud(this.world, this.seed);
     this.minimap = new Minimap(this.world);
@@ -139,6 +146,8 @@ export class Game {
       onToggleAuto: () => this.setAutoWalk(!this.autoWalk),
       onToggleTime: () => this.setFastTime(!this.fastTime),
       onToggleView: () => this.setThirdPerson(!this.thirdPerson),
+      onTeleportDesert: () => this.teleportToDesert(),
+      onTeleportOasis: () => this.teleportToOasis(),
       onNewWorld: () => this.loadNewWorld(),
     });
     this.speedControl = new SpeedControl({
@@ -196,6 +205,8 @@ export class Game {
 
     // 天气先推进，让玩家物理和水面使用本帧的新水位。
     const hoursPerSecond = this.fastTime ? FAST_TIME_SCALE : NORMAL_TIME_SCALE;
+    this.desertFactor = this.world.desertAt(this.player.state.x, this.player.state.z);
+    this.weather.setDesertFactor(this.desertFactor);
     this.weather.update(dt, hoursPerSecond);
     this.weatherEffects.update(dt, this.weather.snapshot, hoursPerSecond);
     this.materials.setSnowCoverage(this.weatherEffects.snowCoverage);
@@ -296,24 +307,66 @@ export class Game {
     this.toolbar.setView(enabled);
   }
 
+  /** 调试：把玩家放到最近的沙漠边缘，并面朝沙漠。 */
+  private teleportToDesert(): void {
+    const state = this.player.state;
+    const target = findNearestDesertEdge(this.world, state.x, state.z);
+    if (!target) return;
+
+    state.x = target.x;
+    state.z = target.z;
+    state.y = this.world.groundAt(target.x, target.z);
+    state.vy = 0;
+    state.grounded = true;
+    state.yaw = target.yaw;
+    state.pitch = -0.03;
+    this.cameraRig.reset();
+  }
+
+  /** 调试：把玩家放到最近的绿洲湖边，并面朝湖心。 */
+  private teleportToOasis(): void {
+    const state = this.player.state;
+    const target = findNearestOasisEdge(this.world, state.x, state.z);
+    if (!target) return;
+
+    state.x = target.x;
+    state.z = target.z;
+    state.y = this.world.groundAt(target.x, target.z);
+    state.vy = 0;
+    state.grounded = true;
+    state.yaw = target.yaw;
+    // 视线已经对准湖面，交还给玩家后不需要再调整。
+    state.pitch = target.pitch;
+    this.cameraRig.reset();
+  }
+
   private setSpeedScale(scale: number): void {
     this.player.setSpeedScale(scale);
     this.speedControl.setValue(this.player.speedScale);
   }
 
   private setManualWeather(kind: WeatherKind, level: WeatherLevel): void {
+    if (this.desertFactor >= DESERT.weatherUiBlock) return;
     this.weather.setManual(kind, level);
     this.syncWeatherUi(true);
   }
 
   private setWeatherAuto(enabled: boolean): void {
+    if (enabled && this.desertFactor >= DESERT.weatherUiBlock) return;
     this.weather.setAuto(enabled);
     this.syncWeatherUi(true);
   }
 
-  /** 自动天气变化后同步下拉框；只在类型/强度/模式变化时写 DOM。 */
+  /** 自动天气变化后同步下拉框；只在类型/强度/模式/沙漠禁用状态变化时写 DOM。 */
   private syncWeatherUi(force = false): void {
     const weather = this.weather;
+    const blocked = this.desertFactor >= DESERT.weatherUiBlock;
+
+    if (blocked !== this.uiWeatherBlocked) {
+      this.uiWeatherBlocked = blocked;
+      this.weatherControl.setDisabled(blocked);
+    }
+
     if (
       !force &&
       weather.kind === this.uiWeatherKind &&
@@ -356,6 +409,10 @@ export class Game {
       getSpeed: () => this.player.speedScale,
       setSpeed: (scale: number) => this.setSpeedScale(scale),
       height: (x: number, z: number) => this.world.height(x, z),
+      desertAt: (x: number, z: number) => this.world.desertAt(x, z),
+      desertFactor: () => this.desertFactor,
+      toDesertEdge: () => this.teleportToDesert(),
+      toOasisEdge: () => this.teleportToOasis(),
       getHour: () => this.dayNight.hour,
       setHour: (hour: number) => this.dayNight.setHour(hour),
       getWeather: () => ({

@@ -41,3 +41,35 @@ export function createVillagerGeometry(): BufferGeometry {
     paintGeometry(brim, 0xb8934e),
   ]);
 }
+
+/**
+ * 沙漠村民：白色长袍 + 深色坎肩 + 头巾与头箍，保持与普通村民相同的骨架比例。
+ */
+export function createDesertVillagerGeometry(): BufferGeometry {
+  const head = new IcosahedronGeometry(0.19, 1);
+  head.translate(0, 1.5, 0);
+
+  const scarfTop = new CylinderGeometry(0.22, 0.24, 0.1, 7);
+  scarfTop.translate(0, 1.68, 0);
+  const scarfBack = new BoxGeometry(0.16, 0.42, 0.34);
+  scarfBack.translate(0, 1.5, -0.06);
+  const headband = new CylinderGeometry(0.23, 0.23, 0.055, 8);
+  headband.translate(0, 1.63, 0);
+
+  return mergeGeometries([
+    box(0.14, 0.62, 0.14, -0.12, 0.31, 0, 0x5a4634),
+    box(0.14, 0.62, 0.14, 0.12, 0.31, 0, 0x5a4634),
+    // 长袍下摆与腰带
+    box(0.5, 0.82, 0.32, 0, 0.85, 0, 0xece2cd),
+    box(0.5, 0.06, 0.33, 0, 0.72, 0, 0x8a3b2c),
+    // 深色坎肩
+    box(0.52, 0.34, 0.34, 0, 1.2, 0, 0x6b4a34),
+    box(0.13, 0.52, 0.13, -0.3, 1.04, 0, 0xece2cd),
+    box(0.13, 0.52, 0.13, 0.3, 1.04, 0, 0xece2cd),
+    paintGeometry(head, 0xd8a67c),
+    paintGeometry(scarfTop, 0xf1e9da),
+    paintGeometry(scarfBack, 0xe4d8c2),
+    paintGeometry(headband, 0x8a3b2c),
+    box(0.2, 0.08, 0.1, 0, 1.36, 0.12, 0x4a3428),
+  ]);
+}

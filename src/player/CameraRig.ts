@@ -25,6 +25,8 @@ const camPosition = new Vector3();
 export class CameraRig {
   private smoothedEyeY: number | null = null;
   private waterLevelValue = WATER_LEVEL;
+  /** 传送后跳过第三人称的位置插值，避免相机横穿整张地图。 */
+  private snapNext = false;
 
   constructor(
     private readonly camera: PerspectiveCamera,
@@ -33,6 +35,12 @@ export class CameraRig {
 
   setWaterLevel(level: number): void {
     this.waterLevelValue = level;
+  }
+
+  /** 玩家被瞬移后调用：下一帧直接落到新位置，不做平滑过渡。 */
+  reset(): void {
+    this.smoothedEyeY = null;
+    this.snapNext = true;
   }
 
   update(state: PlayerState, started: boolean, thirdPerson: boolean, dt: number): void {
@@ -72,6 +80,10 @@ export class CameraRig {
     );
 
     this.camera.position.lerp(camPosition, Math.min(1, dt * THIRD_PERSON_SMOOTHING));
+    if (this.snapNext) {
+      this.camera.position.copy(camPosition);
+      this.snapNext = false;
+    }
     camTarget.set(eyeX, eyeY - THIRD_PERSON_LOOK_DROP, eyeZ);
     this.camera.lookAt(camTarget);
   }

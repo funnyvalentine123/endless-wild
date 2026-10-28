@@ -7,6 +7,7 @@ import {
   type Material,
 } from 'three';
 import { CHUNK_SIZE, WATER_LEVEL } from '../../config/world';
+import { DESERT_CORE } from '../../config/desert';
 import { createRandom, hashChunk, mix32 } from '../../math/random';
 import { mergeGeometries } from '../../render/geometry/mergeGeometries';
 import { paintGeometry } from '../../render/geometry/paintGeometry';
@@ -20,6 +21,8 @@ export interface HousePlacement {
   y: number;
   z: number;
   rotation: number;
+  /** 沙漠区域的建筑统一生成帐篷。 */
+  tent?: boolean;
 }
 
 export interface HouseStyle {
@@ -48,6 +51,8 @@ export interface HouseSite {
   doorZ: number;
   houseRadius: number;
   chimney?: { x: number; y: number; z: number };
+  /** 沙漠帐篷：没有烟囱，村民使用阿拉伯风格装扮。 */
+  tent?: boolean;
 }
 
 export interface HouseBuild {
@@ -176,7 +181,13 @@ export function findHousePlacement(
 
     const side = x >= world.roadX(z) ? 1 : -1;
     const rotation = -side * (Math.PI / 2) + (random() - 0.5) * 0.16;
-    return { x, y: maxHeight + 0.02, z, rotation };
+    return {
+      x,
+      y: maxHeight + 0.02,
+      z,
+      rotation,
+      tent: world.desertAt(x, z) > DESERT_CORE,
+    };
   }
 
   return null;

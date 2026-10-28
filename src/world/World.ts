@@ -1,10 +1,11 @@
+import { DESERT_CORE } from '../config/desert';
 import { TERRAIN } from '../config/terrain';
 import { ROAD_WIDTH, WATER_LEVEL } from '../config/world';
 import { lerp, smoothstep } from '../math/scalar';
 import type { Biome } from './Biomes';
 import { NoiseFields } from './NoiseFields';
 import { RoadTrack } from './RoadTrack';
-import { TerrainSurface } from './TerrainSurface';
+import { TerrainSurface, type OasisInfo, type OasisSite } from './TerrainSurface';
 
 /**
  * 世界采样门面：地形、道路、生物群系之间唯一的组合点。
@@ -22,7 +23,7 @@ export class World {
   constructor(seed: number) {
     this.seed = seed;
     this.noise = new NoiseFields(seed);
-    this.surface = new TerrainSurface(this.noise);
+    this.surface = new TerrainSurface(this.noise, seed);
     this.track = new RoadTrack(this.noise.road, (x, z) => this.surface.rawHeight(x, z));
   }
 
@@ -69,8 +70,41 @@ export class World {
     return this.surface.forestAt(x, z);
   }
 
+  /**
+   * 沙漠因子：1 为沙漠核心，0 为普通地形，中间是平滑过渡带。
+   * 天气、植被、地表颜色和生物刷新都通过这一个字段渐变。
+   */
+  desertAt(x: number, z: number): number {
+    return this.surface.desertAt(x, z);
+  }
+
   riverAt(x: number, z: number): number {
     return this.surface.riverAt(x, z);
+  }
+
+  /** 0–1 的绿洲覆盖因子：湖面与树林台地为 1，边缘平滑衰减到 0。 */
+  oasisAt(x: number, z: number): number {
+    return this.surface.oasisAt(x, z);
+  }
+
+  /** 最近的绿洲信息；不在任何绿洲范围内时返回 null。 */
+  oasisInfo(x: number, z: number): OasisInfo | null {
+    return this.surface.oasisInfo(x, z);
+  }
+
+  /** 与给定矩形相交的所有绿洲。 */
+  oasisSitesInRect(minX: number, minZ: number, maxX: number, maxZ: number): OasisSite[] {
+    return this.surface.oasisSitesInRect(minX, minZ, maxX, maxZ);
+  }
+
+  /**
+   * 供植被、动物使用的沙漠生境因子。
+   *
+   * 绿洲属于“沙漠里的一片绿”，对普通动植物都是可生存的岛屿，但沙漠物种
+   * 不会走进绿洲；把绿洲从沙漠因子里扣掉后，两边的生境边界都会自动生效。
+   */
+  habitatDesertAt(x: number, z: number): number {
+    return this.desertAt(x, z) * (1 - this.oasisAt(x, z));
   }
 
   /** 顶点着色使用的细节噪声。 */
@@ -82,7 +116,14 @@ export class World {
     const height = this.surface.rawHeight(x, z);
     if (Math.abs(x - this.roadX(z)) < ROAD_WIDTH * 0.5 + 0.3 && this.bridge(z) > 0.5) return '桥上';
     const river = this.riverAt(x, z);
-    if (height < WATER_LEVEL + 0.2) return river < TERRAIN.river.start ? '河流' : '湖泊';
+    const oasis = this.oasisAt(x, z);
+    if (height < WATER_LEVEL + 0.2) {
+      // 绿洲湖水远离河道，不能按河谷规则判成“河流”。
+      if (oasis > 0.5) return '湖泊';
+      return river < TERRAIN.river.start ? '河流' : '湖泊';
+    }
+    if (oasis > 0.5) return '绿洲';
+    if (this.desertAt(x, z) > DESERT_CORE) return '沙漠';
     if (river < TERRAIN.river.bank) return '河畔';
     if (height > 42) return '雪山';
     if (height > 20) return '山坡';

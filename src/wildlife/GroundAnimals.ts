@@ -108,6 +108,8 @@ export class GroundAnimalGroup {
       maxDistance: this.config.spawnRadiusMax,
       maxSlope: this.config.maxSlope,
       maxForest: this.config.maxForest,
+      minDesert: this.config.minDesert,
+      maxDesert: this.config.maxDesert,
     });
     if (!spot) return;
 
@@ -167,7 +169,13 @@ export class GroundAnimalGroup {
       const nextZ = animal.z + Math.cos(animal.heading) * speed * dt;
       const nextY = this.world.groundAt(nextX, nextZ);
 
-      if (nextY < WATER_LEVEL + 0.35) {
+      // 动物不会离开自己的生境：普通动物不进沙漠深处，沙漠动物也不进绿洲/森林。
+      const nextDesert = this.world.habitatDesertAt(nextX, nextZ);
+      const outsideHabitat =
+        (config.minDesert !== undefined && nextDesert < config.minDesert) ||
+        (config.maxDesert !== undefined && nextDesert > config.maxDesert);
+
+      if (nextY < WATER_LEVEL + 0.35 || outsideHabitat) {
         animal.targetHeading += Math.PI * randomBetween(0.6, 1.4);
         animal.timer = Math.min(animal.timer, 0.35);
       } else {

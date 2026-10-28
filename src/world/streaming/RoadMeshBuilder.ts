@@ -37,6 +37,7 @@ export class RoadMeshBuilder {
     const positions: number[] = [];
     const uvs: number[] = [];
     const colors: number[] = [];
+    const snowMasks: number[] = [];
     const indices: number[] = [];
 
     const posts: InstanceTransform[] = [];
@@ -55,6 +56,10 @@ export class RoadMeshBuilder {
 
       const shade = lerp(1, 0.72, bridge);
       colors.push(shade, shade * 0.92, shade * 0.85, shade, shade * 0.92, shade * 0.85);
+
+      // 沙漠中的路面同样不参与积雪变白。
+      const snowMask = 1 - this.world.desertAt(roadX, z);
+      snowMasks.push(snowMask, snowMask);
 
       if (j < rows - 1) {
         const base = j * 2;
@@ -119,6 +124,7 @@ export class RoadMeshBuilder {
     geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
     geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
     geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+    geometry.setAttribute('aSnowMask', new Float32BufferAttribute(snowMasks, 1));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
 

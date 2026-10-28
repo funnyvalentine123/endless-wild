@@ -34,7 +34,12 @@ interface Villager {
   scale: number;
 }
 
-const MAX_VILLAGERS = 48;
+interface VillagerPool {
+  mesh: InstancedMesh;
+  villagers: Villager[];
+}
+
+const MAX_VILLAGERS_PER_POOL = 48;
 const WANDER_RADIUS = 5.5;
 const MAX_HOME_DISTANCE = 9;
 const matrix = new Matrix4();
@@ -47,31 +52,36 @@ function randomBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
-/** 所有村民共用一个 InstancedMesh；每栋房屋固定 1~3 人。 */
+/**
+ * 村民按建筑类型分成两个 InstancedMesh：普通房屋村民与沙漠帐篷村民（阿拉伯装扮）。
+ * 每栋建筑固定 1~3 人，围绕门口活动；区块卸载时按 homeId 移除。
+ */
 export class Villagers {
-  private readonly mesh: InstancedMesh;
-  private readonly villagers: Villager[] = [];
+  private readonly pools: VillagerPool[];
 
   constructor(
     private readonly scene: Scene,
     private readonly world: World,
     material: Material,
-    private readonly geometry: BufferGeometry,
+    countryGeometry: BufferGeometry,
+    desertGeometry: BufferGeometry,
   ) {
-    this.mesh = new InstancedMesh(geometry, material, MAX_VILLAGERS);
-    this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
-    scene.add(this.mesh);
+    this.pools = [
+      this.createPool(material, countryGeometry),
+      this.createPool(material, desertGeometry),
+    ];
   }
 
   get count(): number {
-    return this.villagers.length;
+    return this.pools[0]!.villagers.length + this.pools[1]!.villagers.length;
   }
 
   addHome(id: string, site: HouseSite): void {
+    const pool = this.pools[site.tent ? 1 : 0]!;
+    const villagers = pool.villagers;
+
     for (let index = 0; index < site.style.villagerCount; index++) {
-      if (this.villagers.length >= MAX_VILLAGERS) return;
+      if (villagers.length >= MAX_VILLAGERS_PER_POOL) return;
 
       let x = site.doorX;
       let z = site.doorZ;
@@ -92,7 +102,7 @@ export class Villagers {
       }
 
       const heading = Math.random() * Math.PI * 2;
-      this.villagers.push({
+      villagers.push({
         homeId: id,
         x,
         y: this.world.groundAt(x, z),
@@ -115,71 +125,91 @@ export class Villagers {
   }
 
   removeHome(id: string): void {
-    for (let index = this.villagers.length - 1; index >= 0; index--) {
-      if (this.villagers[index]!.homeId === id) this.villagers.splice(index, 1);
+    for (const pool of this.pools) {
+      for (let index = pool.villagers.length - 1; index >= 0; index--) {
+        if (pool.villagers[index]!.homeId === id) pool.villagers.splice(index, 1);
+      }
     }
   }
 
   update(dt: number): void {
-    for (let index = 0; index < this.villagers.length; index++) {
-      const villager = this.villagers[index]!;
+    for (const pool of this.pools) {
+      const villagers = pool.villagers;
 
-      if (Math.hypot(villager.x - villager.homeX, villager.z - villager.homeZ) > MAX_HOME_DISTANCE) {
-        this.setTarget(villager, villager.homeX, villager.homeZ);
-      }
+      for (let index = 0; index < villagers.length; index++) {
+        const villager = villagers[index]!;
 
-      villager.timer -= dt;
-
-      if (villager.mode === 'idle' && villager.timer <= 0) {
-        this.chooseTarget(villager);
-      } else if (villager.mode === 'move') {
-        const distanceToTarget = Math.hypot(
-          villager.targetX - villager.x,
-          villager.targetZ - villager.z,
-        );
-        if (villager.timer <= 0 || distanceToTarget < 0.6) {
-          villager.mode = 'idle';
-          villager.timer = randomBetween(2, 6);
+        if (
+          Math.hypot(villager.x - villager.homeX, villager.z - villager.homeZ) >
+          MAX_HOME_DISTANCE
+        ) {
+          this.setTarget(villager, villager.homeX, villager.homeZ);
         }
-      }
 
-      if (villager.mode === 'move') {
-        const dx = villager.targetX - villager.x;
-        const dz = villager.targetZ - villager.z;
-        const desiredHeading = Math.atan2(dx, dz);
-        villager.heading +=
-          angularDifference(villager.heading, desiredHeading) * Math.min(1, dt * 3.2);
+        villager.timer -= dt;
 
-        const nextX = villager.x + Math.sin(villager.heading) * 1.1 * dt;
-        const nextZ = villager.z + Math.cos(villager.heading) * 1.1 * dt;
-        const nextY = this.world.groundAt(nextX, nextZ);
-        const insideHouse =
-          Math.hypot(nextX - villager.houseX, nextZ - villager.houseZ) <
-          villager.houseRadius + 0.7;
-
-        if (nextY < WATER_LEVEL + 0.45 || insideHouse) {
+        if (villager.mode === 'idle' && villager.timer <= 0) {
           this.chooseTarget(villager);
-        } else {
-          villager.x = nextX;
-          villager.z = nextZ;
-          villager.y = nextY;
+        } else if (villager.mode === 'move') {
+          const distanceToTarget = Math.hypot(
+            villager.targetX - villager.x,
+            villager.targetZ - villager.z,
+          );
+          if (villager.timer <= 0 || distanceToTarget < 0.6) {
+            villager.mode = 'idle';
+            villager.timer = randomBetween(2, 6);
+          }
         }
-      } else {
-        villager.y = this.world.groundAt(villager.x, villager.z);
+
+        if (villager.mode === 'move') {
+          const dx = villager.targetX - villager.x;
+          const dz = villager.targetZ - villager.z;
+          const desiredHeading = Math.atan2(dx, dz);
+          villager.heading +=
+            angularDifference(villager.heading, desiredHeading) * Math.min(1, dt * 3.2);
+
+          const nextX = villager.x + Math.sin(villager.heading) * 1.1 * dt;
+          const nextZ = villager.z + Math.cos(villager.heading) * 1.1 * dt;
+          const nextY = this.world.groundAt(nextX, nextZ);
+          const insideHouse =
+            Math.hypot(nextX - villager.houseX, nextZ - villager.houseZ) <
+            villager.houseRadius + 0.7;
+
+          if (nextY < WATER_LEVEL + 0.45 || insideHouse) {
+            this.chooseTarget(villager);
+          } else {
+            villager.x = nextX;
+            villager.z = nextZ;
+            villager.y = nextY;
+          }
+        } else {
+          villager.y = this.world.groundAt(villager.x, villager.z);
+        }
+
+        villager.phase += dt * (villager.mode === 'move' ? 7 : 2);
+        this.writeMatrix(pool.mesh, villager, index);
       }
 
-      villager.phase += dt * (villager.mode === 'move' ? 7 : 2);
-      this.writeMatrix(villager, index);
+      pool.mesh.count = villagers.length;
+      pool.mesh.instanceMatrix.needsUpdate = true;
     }
-
-    this.mesh.count = this.villagers.length;
-    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   dispose(): void {
-    this.scene.remove(this.mesh);
-    this.mesh.dispose();
-    this.geometry.dispose();
+    for (const pool of this.pools) {
+      this.scene.remove(pool.mesh);
+      pool.mesh.dispose();
+      pool.mesh.geometry.dispose();
+    }
+  }
+
+  private createPool(material: Material, geometry: BufferGeometry): VillagerPool {
+    const mesh = new InstancedMesh(geometry, material, MAX_VILLAGERS_PER_POOL);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+    this.scene.add(mesh);
+    return { mesh, villagers: [] };
   }
 
   private chooseTarget(villager: Villager): void {
@@ -216,12 +246,12 @@ export class Villagers {
     villager.mode = 'move';
   }
 
-  private writeMatrix(villager: Villager, index: number): void {
+  private writeMatrix(mesh: InstancedMesh, villager: Villager, index: number): void {
     const bob = villager.mode === 'move' ? Math.sin(villager.phase) * 0.025 : 0;
     position.set(villager.x, villager.y + bob, villager.z);
     quaternion.setFromEuler(euler.set(0, villager.heading, 0));
     scale.set(villager.scale, villager.scale, villager.scale);
     matrix.compose(position, quaternion, scale);
-    this.mesh.setMatrixAt(index, matrix);
+    mesh.setMatrixAt(index, matrix);
   }
 }

@@ -1,4 +1,4 @@
-export type GroundSpeciesKind = 'rabbit' | 'snake' | 'cow' | 'deer';
+export type GroundSpeciesKind = 'rabbit' | 'snake' | 'cow' | 'deer' | 'lizard' | 'camel';
 
 export interface GroundSpeciesConfig {
   readonly kind: GroundSpeciesKind;
@@ -16,6 +16,10 @@ export interface GroundSpeciesConfig {
   readonly moveMax: number;
   readonly maxSlope: number;
   readonly maxForest: number;
+  /** 生境下限：沙漠因子低于该值时不会生成 / 进入。 */
+  readonly minDesert?: number;
+  /** 生境上限：沙漠因子高于该值时不会生成 / 进入。 */
+  readonly maxDesert?: number;
   readonly turnRate: number;
   readonly scaleMin: number;
   readonly scaleMax: number;
@@ -41,6 +45,7 @@ export const RABBIT_CONFIG: GroundSpeciesConfig = {
   moveMax: 1.4,
   maxSlope: 0.35,
   maxForest: Number.POSITIVE_INFINITY,
+  maxDesert: 0.3,
   turnRate: 5,
   scaleMin: 0.8,
   scaleMax: 1.15,
@@ -66,6 +71,7 @@ export const SNAKE_CONFIG: GroundSpeciesConfig = {
   moveMax: 2.2,
   maxSlope: 0.45,
   maxForest: Number.POSITIVE_INFINITY,
+  maxDesert: 0.35,
   turnRate: 2.2,
   scaleMin: 0.8,
   scaleMax: 1.2,
@@ -91,6 +97,7 @@ export const COW_CONFIG: GroundSpeciesConfig = {
   moveMax: 5,
   maxSlope: 0.12,
   maxForest: 0.18,
+  maxDesert: 0.2,
   turnRate: 0.8,
   scaleMin: 0.9,
   scaleMax: 1.15,
@@ -116,11 +123,65 @@ export const DEER_CONFIG: GroundSpeciesConfig = {
   moveMax: 3,
   maxSlope: 0.22,
   maxForest: 0.6,
+  maxDesert: 0.25,
   turnRate: 3,
   scaleMin: 0.9,
   scaleMax: 1.15,
   hopHeight: 0,
   hopFrequency: 3,
+  sway: 0,
+};
+
+/** 小蜥蜴：沙漠核心的小型动物，移动快、受惊后迅速钻走。 */
+export const LIZARD_CONFIG: GroundSpeciesConfig = {
+  kind: 'lizard',
+  // 数量比普通地形略多，但撒得比较开：沙丘视野里通常只有一两只，不会铺满沙地。
+  maxCount: 12,
+  spawnInterval: 0.5,
+  spawnRadiusMin: 30,
+  spawnRadiusMax: 140,
+  despawnRadius: 220,
+  walkSpeed: 2.1,
+  fleeSpeed: 5.6,
+  fleeRadius: 6,
+  idleMin: 0.8,
+  idleMax: 2.4,
+  moveMin: 0.3,
+  moveMax: 1.2,
+  maxSlope: 0.4,
+  maxForest: Number.POSITIVE_INFINITY,
+  minDesert: 0.55,
+  turnRate: 6,
+  scaleMin: 0.8,
+  scaleMax: 1.2,
+  hopHeight: 0,
+  hopFrequency: 8,
+  sway: 0.18,
+};
+
+/** 骆驼：沙漠里缓慢行走的大型动物，体型大、转向慢。 */
+export const CAMEL_CONFIG: GroundSpeciesConfig = {
+  kind: 'camel',
+  maxCount: 4,
+  spawnInterval: 2.8,
+  spawnRadiusMin: 45,
+  spawnRadiusMax: 140,
+  despawnRadius: 250,
+  walkSpeed: 1.6,
+  fleeSpeed: 3,
+  fleeRadius: 0,
+  idleMin: 4,
+  idleMax: 9,
+  moveMin: 3,
+  moveMax: 7,
+  maxSlope: 0.18,
+  maxForest: 0.2,
+  minDesert: 0.5,
+  turnRate: 0.9,
+  scaleMin: 0.95,
+  scaleMax: 1.15,
+  hopHeight: 0,
+  hopFrequency: 1.6,
   sway: 0,
 };
 

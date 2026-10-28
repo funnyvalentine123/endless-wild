@@ -32,9 +32,10 @@ export class WorldMaterials {
     });
 
     // 共享材质 + 一个全局 uniform：不重建区块几何，也能让地面、屋顶、树冠逐渐变白。
-    this.applySnow(this.terrain, 1);
+    // 地面（地形/道路）额外读取逐顶点 aSnowMask：沙漠区域永远保持沙色，不被雪覆盖。
+    this.applySnow(this.terrain, 1, true);
     this.applySnow(this.vegetation, 0.9);
-    this.applySnow(this.road, 0.8);
+    this.applySnow(this.road, 0.8, true);
   }
 
   /** 0–1 的积雪覆盖；晴天由天气系统缓慢降回 0。 */
@@ -52,23 +53,37 @@ export class WorldMaterials {
     this.lamp.emissiveIntensity = intensity;
   }
 
-  private applySnow(material: MeshLambertMaterial, strength: number): void {
+  private applySnow(material: MeshLambertMaterial, strength: number, masked = false): void {
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uSnowCoverage = this.snowCoverage;
+
+      if (masked) {
+        shader.vertexShader =
+          'attribute float aSnowMask;\nvarying float vSnowMask;\n' +
+          shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n  vSnowMask = aSnowMask;',
+          );
+      }
+
       shader.fragmentShader =
         'uniform float uSnowCoverage;\n' +
-        shader.fragmentShader.replace(
-          '#include <emissivemap_fragment>',
-          `#include <emissivemap_fragment>
-           float snowMask = 0.22 + 0.78 * smoothstep(0.3, 0.78, normal.y);
-           diffuseColor.rgb = mix(
-             diffuseColor.rgb,
-             vec3(0.93, 0.96, 1.0),
-             clamp(uSnowCoverage * ${strength.toFixed(2)} * snowMask, 0.0, 0.95)
-           );`,
-        );
+        (masked ? 'varying float vSnowMask;\n' : '') +
+        shader.fragmentShader;
+
+      const mask = masked ? 'vSnowMask' : '1.0';
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         float snowMask = 0.22 + 0.78 * smoothstep(0.3, 0.78, normal.y);
+         diffuseColor.rgb = mix(
+           diffuseColor.rgb,
+           vec3(0.93, 0.96, 1.0),
+           clamp(uSnowCoverage * ${strength.toFixed(2)} * snowMask * ${mask}, 0.0, 0.95)
+         );`,
+      );
     };
-    material.customProgramCacheKey = () => `snow-${strength}`;
+    material.customProgramCacheKey = () => `snow-${strength}-${masked ? 'masked' : 'plain'}`;
   }
 
   dispose(): void {

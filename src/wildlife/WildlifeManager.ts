@@ -1,9 +1,11 @@
 import type { Material, Scene } from 'three';
 import {
   BIRD_CONFIG,
+  CAMEL_CONFIG,
   COW_CONFIG,
   DEER_CONFIG,
   FISH_CONFIG,
+  LIZARD_CONFIG,
   RABBIT_CONFIG,
   SNAKE_CONFIG,
 } from '../config/wildlife';
@@ -13,9 +15,11 @@ import { FishSchool } from './Fish';
 import { GroundAnimalGroup } from './GroundAnimals';
 import {
   createBirdGeometries,
+  createCamelGeometry,
   createCowGeometry,
   createDeerGeometry,
   createFishGeometry,
+  createLizardGeometry,
   createRabbitGeometry,
   createSnakeGeometry,
 } from './models';
@@ -130,6 +134,41 @@ export class WildlifeManager {
       update: (dt, x, z) => deer.update(dt, x, z),
       getSightings: () => deer.getSightings(),
       dispose: () => deer.dispose(),
+    });
+
+    // 沙漠专属动物：小蜥蜴与骆驼，只在沙漠核心生成。
+    const lizards = new GroundAnimalGroup(
+      scene,
+      world,
+      material,
+      LIZARD_CONFIG,
+      createLizardGeometry(),
+    );
+    groups.push({
+      label: 'lizards',
+      get count() {
+        return lizards.count;
+      },
+      update: (dt, x, z) => lizards.update(dt, x, z),
+      getSightings: () => lizards.getSightings(),
+      dispose: () => lizards.dispose(),
+    });
+
+    const camels = new GroundAnimalGroup(
+      scene,
+      world,
+      material,
+      CAMEL_CONFIG,
+      createCamelGeometry(),
+    );
+    groups.push({
+      label: 'camels',
+      get count() {
+        return camels.count;
+      },
+      update: (dt, x, z) => camels.update(dt, x, z),
+      getSightings: () => camels.getSightings(),
+      dispose: () => camels.dispose(),
     });
 
     this.groups = groups;

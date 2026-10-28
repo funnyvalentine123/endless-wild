@@ -4,6 +4,8 @@ export interface ToolbarHandlers {
   onToggleAuto: () => void;
   onToggleTime: () => void;
   onToggleView: () => void;
+  onTeleportDesert: () => void;
+  onTeleportOasis: () => void;
   onNewWorld: () => void;
 }
 
@@ -21,6 +23,8 @@ export class Toolbar {
   private readonly autoButton = requireElement<HTMLButtonElement>('bAuto');
   private readonly timeButton = requireElement<HTMLButtonElement>('bTime');
   private readonly viewButton = requireElement<HTMLButtonElement>('bView');
+  private readonly desertButton = requireElement<HTMLButtonElement>('bDesert');
+  private readonly oasisButton = requireElement<HTMLButtonElement>('bOasis');
   private readonly newButton = requireElement<HTMLButtonElement>('bNew');
   private readonly moreButton = requireElement<HTMLButtonElement>('barMore');
   private readonly items: HTMLElement[];
@@ -30,6 +34,8 @@ export class Toolbar {
   private readonly handleAuto = (): void => this.handlers.onToggleAuto();
   private readonly handleTime = (): void => this.handlers.onToggleTime();
   private readonly handleView = (): void => this.handlers.onToggleView();
+  private readonly handleDesert = (): void => this.handlers.onTeleportDesert();
+  private readonly handleOasis = (): void => this.handlers.onTeleportOasis();
   private readonly handleNew = (): void => this.handlers.onNewWorld();
   private readonly handleMore = (): void => this.setOpen(!this.bar.classList.contains('open'));
   private readonly handleBarClick = (event: MouseEvent): void => {
@@ -51,6 +57,8 @@ export class Toolbar {
     this.autoButton.addEventListener('click', this.handleAuto);
     this.timeButton.addEventListener('click', this.handleTime);
     this.viewButton.addEventListener('click', this.handleView);
+    this.desertButton.addEventListener('click', this.handleDesert);
+    this.oasisButton.addEventListener('click', this.handleOasis);
     this.newButton.addEventListener('click', this.handleNew);
     this.moreButton.addEventListener('click', this.handleMore);
     this.bar.addEventListener('click', this.handleBarClick);
@@ -77,6 +85,8 @@ export class Toolbar {
     this.autoButton.removeEventListener('click', this.handleAuto);
     this.timeButton.removeEventListener('click', this.handleTime);
     this.viewButton.removeEventListener('click', this.handleView);
+    this.desertButton.removeEventListener('click', this.handleDesert);
+    this.oasisButton.removeEventListener('click', this.handleOasis);
     this.newButton.removeEventListener('click', this.handleNew);
     this.moreButton.removeEventListener('click', this.handleMore);
     this.bar.removeEventListener('click', this.handleBarClick);

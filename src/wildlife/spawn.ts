@@ -1,4 +1,5 @@
 import { WATER_LEVEL } from '../config/world';
+import { smoothstep } from '../math/scalar';
 import type { World } from '../world/World';
 
 export interface SpawnSpot {
@@ -12,6 +13,9 @@ export interface LandSpawnOptions {
   maxDistance: number;
   maxSlope: number;
   maxForest?: number;
+  /** 生境沙漠因子下限 / 上限，用于把普通动物与沙漠动物分开。 */
+  minDesert?: number;
+  maxDesert?: number;
 }
 
 function randomDistance(min: number, max: number): number {
@@ -49,6 +53,22 @@ export function findLandSpot(
 
     if (y < WATER_LEVEL + 0.6) continue;
     if (options.maxForest !== undefined && world.forestAt(x, z) > options.maxForest) continue;
+
+    // 生境用 habitatDesertAt：绿洲从沙漠因子里扣掉，普通动物可以在绿洲
+    // 里生成、但不能走出绿洲；沙漠动物则进不来。
+    const desert = world.habitatDesertAt(x, z);
+    if (options.minDesert !== undefined && desert < options.minDesert) continue;
+    if (options.maxDesert !== undefined && desert > options.maxDesert) continue;
+
+    // 靠近沙漠时逐步降低普通动物的刷新概率：生境边缘不会出现“突然一只都没有”的硬切。
+    if (options.maxDesert !== undefined) {
+      const fadeStart = options.maxDesert * 0.4;
+      if (desert > fadeStart) {
+        const chance = 1 - smoothstep(fadeStart, options.maxDesert, desert);
+        if (Math.random() > chance) continue;
+      }
+    }
+
     if (terrainSlope(world, x, z) > options.maxSlope) continue;
 
     return { x, y, z };

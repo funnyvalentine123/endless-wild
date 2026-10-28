@@ -116,6 +116,12 @@
   cursor: default;
 }
 
+/* 沙漠里整组天气控件不可用：标签与复选框一起变暗，提示原因。 */
+#bar .weather.is-disabled .weather-auto {
+  opacity: 0.45;
+  cursor: default;
+}
+
 #bar .weather option {
   background: #25333c;
   color: #fff;

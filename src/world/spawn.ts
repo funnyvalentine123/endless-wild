@@ -21,6 +21,8 @@ function isSuitable(world: World, z: number): boolean {
   if (world.bridge(z) > 0.05) return false;
   if (world.bridge(z - 12) > 0.1 || world.bridge(z - 24) > 0.1) return false;
   if (world.rawHeight(x, z) < WATER_LEVEL + MIN_LAND_CLEARANCE) return false;
+  // 出生点应该在普通地形上，避免玩家一睁眼就站在沙漠里。
+  if (world.desertAt(x, z) > 0.2) return false;
 
   // 出生点周围也要开阔：避免一睁眼就是河岸悬崖或紧贴水面的路段。
   for (const offset of [-40, -24, -12, 12, 24, 40]) {

@@ -15,6 +15,13 @@ export interface WildDebugApi {
   getSpeed(): number;
   setSpeed(scale: number): void;
   height(x: number, z: number): number;
+  /** 沙漠因子：1 为核心沙漠，0 为普通地形。 */
+  desertAt(x: number, z: number): number;
+  desertFactor(): number;
+  /** 调试：传送到最近的沙漠边缘并面朝沙漠。 */
+  toDesertEdge(): void;
+  /** 调试：传送到最近的绿洲湖边并面朝湖心。 */
+  toOasisEdge(): void;
   getHour(): number;
   setHour(hour: number): void;
   getWeather(): {

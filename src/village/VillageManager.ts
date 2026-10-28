@@ -3,7 +3,7 @@ import type { HouseSite } from '../world/landmarks/Houses';
 import type { ChunkView } from '../world/streaming/types';
 import type { World } from '../world/World';
 import { SmokeSystem, type SmokeEmitter } from './Smoke';
-import { createVillagerGeometry } from './models';
+import { createDesertVillagerGeometry, createVillagerGeometry } from './models';
 import { Villagers } from './Villagers';
 
 interface VillageHome {
@@ -23,7 +23,13 @@ export class VillageManager {
   private readonly smoke: SmokeSystem;
 
   constructor(scene: Scene, world: World, material: Material) {
-    this.villagers = new Villagers(scene, world, material, createVillagerGeometry());
+    this.villagers = new Villagers(
+      scene,
+      world,
+      material,
+      createVillagerGeometry(),
+      createDesertVillagerGeometry(),
+    );
     this.smoke = new SmokeSystem(scene);
   }
 

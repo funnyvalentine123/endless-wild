@@ -11,6 +11,8 @@ export class WeatherControl {
   private readonly autoBox = requireElement<HTMLInputElement>('weatherAuto');
   private readonly kindSelect = requireElement<HTMLSelectElement>('weatherKind');
   private readonly levelSelect = requireElement<HTMLSelectElement>('weatherLevel');
+  private readonly group = this.autoBox.closest('.weather');
+  private disabled = false;
 
   private readonly handleAuto = (): void => this.handlers.onAutoChange(this.autoBox.checked);
   private readonly handleManual = (): void => {
@@ -34,6 +36,18 @@ export class WeatherControl {
     this.updateLevelEnabled();
   }
 
+  /** 沙漠中天气操控不可用：整组控件禁用，并给出提示。 */
+  setDisabled(disabled: boolean): void {
+    if (disabled === this.disabled) return;
+    this.disabled = disabled;
+    const hint = disabled ? '沙漠中无法操纵天气' : '';
+    this.autoBox.title = hint;
+    this.kindSelect.title = hint;
+    this.levelSelect.title = hint;
+    this.group?.classList.toggle('is-disabled', disabled);
+    this.updateLevelEnabled();
+  }
+
   dispose(): void {
     this.autoBox.removeEventListener('change', this.handleAuto);
     this.kindSelect.removeEventListener('change', this.handleManual);
@@ -41,6 +55,8 @@ export class WeatherControl {
   }
 
   private updateLevelEnabled(): void {
-    this.levelSelect.disabled = this.kindSelect.value === 'clear';
+    this.autoBox.disabled = this.disabled;
+    this.kindSelect.disabled = this.disabled;
+    this.levelSelect.disabled = this.disabled || this.kindSelect.value === 'clear';
   }
 }

@@ -7,12 +7,12 @@ import { VEGETATION_KINDS, type VegetationAssets, type VegetationKind } from '..
 import { addInstances } from '../../render/instancing';
 import {
   HOUSE_CLEAR_RADIUS,
-  HOUSE_COLLIDER_RADIUS,
   createHouse,
   findHousePlacement,
   type HousePlacement,
   type HouseSite,
 } from '../landmarks/Houses';
+import { createTent } from '../landmarks/Tents';
 import { scatterVegetation } from './VegetationScatter';
 import type { ChunkView, ExclusionZone } from './types';
 
@@ -43,22 +43,30 @@ export class ChunkMeshBuilder {
 
     const normals = geometry.getAttribute('normal') as BufferAttribute;
     const colors = new Float32Array(positions.count * 3);
+    const snowMasks = new Float32Array(positions.count);
     const color = new Color();
 
     for (let i = 0; i < positions.count; i++) {
+      const worldX = positions.getX(i) + originX;
+      const worldZ = positions.getZ(i) + originZ;
+      const desert = this.world.desertAt(worldX, worldZ);
+      // 沙漠地面永远不参与积雪变白，过渡带按沙漠因子平滑衰减。
+      snowMasks[i] = 1 - desert;
       sampleTerrainColor(
         this.world,
-        positions.getX(i) + originX,
-        positions.getZ(i) + originZ,
+        worldX,
+        worldZ,
         positions.getY(i),
         normals.getY(i),
         color,
+        desert,
       );
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
     }
     geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    geometry.setAttribute('aSnowMask', new BufferAttribute(snowMasks, 1));
 
     const terrain = new Mesh(geometry, this.materials.terrain);
     terrain.position.set(originX, 0, originZ);
@@ -89,18 +97,20 @@ export class ChunkMeshBuilder {
 
     let site: HouseSite | undefined;
     if (house) {
-      const built = createHouse(
-        house,
-        this.seed,
-        cx,
-        cz,
-        this.world,
-        this.materials.vegetation,
-        this.materials.window,
-      );
+      const built = house.tent
+        ? createTent(house, this.seed, cx, cz, this.world, this.materials.vegetation)
+        : createHouse(
+            house,
+            this.seed,
+            cx,
+            cz,
+            this.world,
+            this.materials.vegetation,
+            this.materials.window,
+          );
       group.add(built.mesh);
       site = built.site;
-      scatter.colliders.push({ x: house.x, z: house.z, radius: HOUSE_COLLIDER_RADIUS });
+      scatter.colliders.push({ x: house.x, z: house.z, radius: built.site.houseRadius });
     }
 
     return {

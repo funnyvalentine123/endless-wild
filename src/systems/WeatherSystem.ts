@@ -1,4 +1,9 @@
 import {
+  DESERT,
+  DESERT_WEATHER_FADE_END,
+  DESERT_WEATHER_FADE_START,
+} from '../config/desert';
+import {
   WEATHER_FADE_SECONDS,
   WEATHER_HOLD_HOURS,
   WEATHER_INITIAL_CLEAR_HOURS,
@@ -7,6 +12,7 @@ import {
   type WeatherLevel,
   type WeatherSnapshot,
 } from '../config/weather';
+import { clamp, smoothstep } from '../math/scalar';
 
 function moveTowards(current: number, target: number, maxDelta: number): number {
   if (current < target) return Math.min(target, current + maxDelta);
@@ -30,6 +36,7 @@ export class WeatherSystem {
   private snowValue = 0;
   private windXValue = 0.8;
   private windZValue = 0;
+  private desertFactorValue = 0;
 
   private readonly state: WeatherSnapshot = {
     kind: 'clear',
@@ -60,6 +67,11 @@ export class WeatherSystem {
     return this.state;
   }
 
+  /** 玩家当前所在位置的沙漠因子（0–1），由 Game 每帧写入。 */
+  setDesertFactor(factor: number): void {
+    this.desertFactorValue = clamp(factor, 0, 1);
+  }
+
   /** hoursPerSecond 与昼夜系统一致，保证“半天”按游戏内时间计算。 */
   update(dt: number, hoursPerSecond: number): void {
     if (this.autoValue) {
@@ -67,17 +79,36 @@ export class WeatherSystem {
       if (this.remainingHours <= 0) this.advanceAuto();
     }
 
+    // 沙漠核心强制晴天：进入后不会再触发雨雪。
+    if (this.desertFactorValue >= DESERT.weatherBlock && this.kindValue !== 'clear') {
+      this.isWeather = false;
+      this.applyTarget('clear', this.levelValue);
+      if (this.autoValue) this.remainingHours = WEATHER_HOLD_HOURS;
+    }
+
+    // 过渡带里雨雪强度随沙漠因子平滑衰减到 0，不会出现雨雪接触沙地。
+    const suppression =
+      1 -
+      smoothstep(
+        DESERT_WEATHER_FADE_START,
+        DESERT_WEATHER_FADE_END,
+        this.desertFactorValue,
+      );
     const fade = dt / WEATHER_FADE_SECONDS;
-    const rainTarget = this.kindValue === 'rain' ? WEATHER_LEVEL_VALUE[this.levelValue] : 0;
-    const snowTarget = this.kindValue === 'snow' ? WEATHER_LEVEL_VALUE[this.levelValue] : 0;
+    const rainTarget =
+      (this.kindValue === 'rain' ? WEATHER_LEVEL_VALUE[this.levelValue] : 0) * suppression;
+    const snowTarget =
+      (this.kindValue === 'snow' ? WEATHER_LEVEL_VALUE[this.levelValue] : 0) * suppression;
     this.rainValue = moveTowards(this.rainValue, rainTarget, fade);
     this.snowValue = moveTowards(this.snowValue, snowTarget, fade);
 
     this.publish();
   }
 
-  /** 手动选择天气：关闭自动调度，立即开始平滑过渡。 */
+  /** 手动选择天气：关闭自动调度，立即开始平滑过渡。沙漠中不可用。 */
   setManual(kind: WeatherKind, level: WeatherLevel): void {
+    if (this.desertFactorValue >= DESERT.weatherBlock) return;
+
     this.autoValue = false;
     this.isWeather = kind !== 'clear';
     this.remainingHours = WEATHER_HOLD_HOURS;
@@ -96,6 +127,14 @@ export class WeatherSystem {
   }
 
   private advanceAuto(): void {
+    // 沙漠里自动调度只会安排晴天。
+    if (this.desertFactorValue >= DESERT.weatherBlock) {
+      this.isWeather = false;
+      this.applyTarget('clear', this.levelValue);
+      this.remainingHours = WEATHER_HOLD_HOURS;
+      return;
+    }
+
     if (this.isWeather) {
       this.isWeather = false;
       this.applyTarget('clear', this.levelValue);
