@@ -14,6 +14,7 @@ import {
 import { CameraRig } from '../player/CameraRig';
 import { Hero } from '../player/Hero';
 import { Player } from '../player/Player';
+import { GemManager } from '../gems/GemManager';
 import { SceneEnvironment } from '../render/environment/SceneEnvironment';
 import { Viewport } from '../render/Viewport';
 import { downloadTextFile } from '../save/download';
@@ -59,6 +60,7 @@ export class Game {
   private readonly environment: SceneEnvironment;
   private readonly wildlife: WildlifeManager;
   private readonly village: VillageManager;
+  private readonly gems: GemManager;
   private readonly streamer: WorldStreamer;
   private readonly player: Player;
   private readonly hero: Hero;
@@ -116,6 +118,13 @@ export class Game {
       this.viewport.scene,
       this.world,
       this.materials.vegetation,
+    );
+    // 红宝石要跟着真实动物移动，所以直接接WildlifeManager的位置查询。
+    this.gems = new GemManager(
+      this.viewport.scene,
+      this.world,
+      this.seed,
+      () => this.wildlife.getSightings(),
     );
 
     const chunkBuilder = new ChunkMeshBuilder(
@@ -243,6 +252,7 @@ export class Game {
     this.streamer.dispose();
     this.wildlife.dispose();
     this.village.dispose();
+    this.gems.dispose();
     this.hero.dispose();
     this.environment.dispose();
     this.viewport.dispose();
@@ -287,12 +297,14 @@ export class Game {
 
     const state = this.player.state;
     this.dayNight.update(dt, this.fastTime);
+    // 昼夜快照当帧只算一次：宝石用它判断白天/夜晚，光照也复用同一份。
+    const daylight = this.dayNight.snapshot;
     this.streamer.update(state.x, state.z, state.yaw, this.started ? 2 : 4);
     this.village.update(dt, this.streamer.chunks);
     this.wildlife.update(dt, state.x, state.z);
+    this.gems.update(dt, state, this.weather.snapshot, waterLevel, daylight.daylightFactor);
     this.cameraRig.update(state, this.started, this.thirdPerson, dt);
 
-    const daylight = this.dayNight.snapshot;
     this.materials.setWindowIntensity(daylight.lampIntensity);
     this.materials.setLampIntensity(daylight.lampIntensity);
     this.environment.applyDaylight(daylight, state.x, state.y, state.z);
@@ -560,6 +572,7 @@ export class Game {
       chunks: this.streamer.chunks,
       roads: this.streamer.roads,
       camera: this.viewport.camera,
+      scene: this.viewport.scene,
       setAuto: (value: boolean) => this.setAutoWalk(value),
       getSpeed: () => this.player.speedScale,
       setSpeed: (scale: number) => this.setSpeedScale(scale),
@@ -607,6 +620,10 @@ export class Game {
       setWeatherAuto: (enabled: boolean) => this.setWeatherAuto(enabled),
       wildlifePopulation: () => this.wildlife.getPopulation(),
       wildlifeSightings: () => this.wildlife.getSightings(),
+      gemPopulation: () => this.gems.getPopulation(),
+      gemSightings: () => this.gems.getSightings(),
+      gemSitesNear: (chunkRadius?: number) =>
+        this.gems.sitesNear(this.player.state.x, this.player.state.z, chunkRadius),
       villageStats: () => this.village.getStats(),
     };
   }

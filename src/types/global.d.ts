@@ -1,4 +1,7 @@
-import type { PerspectiveCamera } from 'three';
+import type { PerspectiveCamera, Scene } from 'three';
+import type { GemKind } from '../config/gems';
+import type { GemSighting } from '../gems/GemManager';
+import type { GemSite } from '../gems/sites';
 import type { WeatherKind, WeatherLevel } from '../config/weather';
 import type { PlayerState } from '../player/Player';
 import type { SaveResult } from '../save/SaveService';
@@ -13,6 +16,8 @@ export interface WildDebugApi {
   chunks: ReadonlyMap<string, ChunkView>;
   roads: ReadonlyMap<number, RoadView>;
   camera: PerspectiveCamera;
+  /** 主场景，便于在控制台里检查具体对象。 */
+  scene: Scene;
   setAuto(value: boolean): void;
   getSpeed(): number;
   setSpeed(scale: number): void;
@@ -75,6 +80,12 @@ export interface WildDebugApi {
     /** 鸟的当前状态（fly / landing / perched / takeoff）；其它动物没有该字段。 */
     mode?: string;
   }>;
+  /** 各类宝石当前数量。 */
+  gemPopulation(): Record<GemKind, number>;
+  /** 各类宝石当前位置；红宝石带 attached（附着的动物种类）。 */
+  gemSightings(): GemSighting[];
+  /** 玩家附近由地形规则决定的宝石站点（调试找点用，不代表已经生成）。 */
+  gemSitesNear(chunkRadius?: number): GemSite[];
   villageStats(): { houses: number; villagers: number; smokeEmitters: number };
 }
 

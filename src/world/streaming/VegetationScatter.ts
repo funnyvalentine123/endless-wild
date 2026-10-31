@@ -10,12 +10,12 @@ import { createRandom, hashChunk } from '../../math/random';
 import { smoothstep } from '../../math/scalar';
 import type { InstanceTransform } from '../../render/instancing';
 import type { World } from '../World';
+import { hoodooSiteAt } from '../desertLandmarks';
 import type { VegetationKind } from '../assets/VegetationAssets';
 import type { CircleCollider, ExclusionZone } from './types';
 
 /** 沙漠植被使用独立随机流，避免影响普通地形的既有植被分布。 */
 const DESERT_SCATTER_SALT = 0x7d3f9a21;
-const HOODOO_SALT = 0x3b7f21c5;
 const ROCK_SALT = 0x5c1d8e43;
 
 const FLOWER_COLORS: ReadonlyArray<readonly [number, number, number]> = [
@@ -336,41 +336,24 @@ function scatterDesertLandmarks(
 
   for (let gx = hoodooFromX; gx <= hoodooToX; gx++) {
     for (let gz = hoodooFromZ; gz <= hoodooToZ; gz++) {
-      if ((((2 * gx + gz) % DESERT.hoodooSpacing) + DESERT.hoodooSpacing) % DESERT.hoodooSpacing !== 0) {
-        continue;
-      }
+      const site = hoodooSiteAt(world, seed, gx, gz);
+      if (!site) continue;
 
-      const random = createRandom(hashChunk(seed ^ HOODOO_SALT, gx, gz));
-      const x = (gx + 0.2 + random() * 0.6) * hoodooSize;
-      const z = (gz + 0.2 + random() * 0.6) * hoodooSize;
+      const { x, z } = site;
       if (x < minX || x >= maxX || z < minZ || z >= maxZ) continue;
       if (blocked(x, z)) continue;
 
-      const desert = world.habitatDesertAt(x, z);
-      if (desert < 0.6) continue;
-      const height = world.height(x, z);
-      if (height < WATER_LEVEL + 0.5) continue;
-
-      // 数量很少，所以每根都做成高大的地标岩柱；底座取周围最低点，稳稳插进沙里。
-      const base = Math.min(
-        height,
-        world.height(x + 2, z),
-        world.height(x - 2, z),
-        world.height(x, z + 2),
-        world.height(x, z - 2),
-      );
-      const scale = 1.4 + random() * 1.0;
-      const sy = scale * (0.95 + random() * 0.45);
+      // 数量很少，所以每根都做成高大的地标岩柱。
       instances.hoodoo.push({
         x,
-        y: base - 0.25 * scale,
         z,
-        ry: random() * Math.PI * 2,
-        scale,
-        sy,
-        color: [0.94 + random() * 0.1, 0.92 + random() * 0.1, 0.86 + random() * 0.1],
+        y: site.base - 0.25 * site.scale,
+        ry: site.ry,
+        scale: site.scale,
+        sy: site.sy,
+        color: site.color,
       });
-      colliders.push({ x, z, radius: 1.55 * scale });
+      colliders.push({ x, z, radius: 1.55 * site.scale });
     }
   }
 
