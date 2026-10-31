@@ -83,6 +83,11 @@ export class Clouds {
     this.material.emissive.copy(color);
   }
 
+  /** 天穹俯瞰时临时隐藏云层：云在相机与地面之间，会挡住整片地形。 */
+  setVisible(visible: boolean): void {
+    this.group.visible = visible;
+  }
+
   /** 坏天气：增加预分配的云、压暗云色并加快漂移。 */
   setWeather(amount: number): void {
     const p = Math.max(0, Math.min(1, amount));

@@ -32,6 +32,21 @@ export class InputManager {
     this.pointer.setActive(active);
   }
 
+  /**
+   * 大地图 / 天穹大视野打开时调用（true），关闭后调用（false）。
+   * 键盘保持可用（可以继续 WASD 行走），鼠标改为按住地图拖拽转向，
+   * 不请求 Pointer Lock，保证还能用光标点关闭按钮。
+   */
+  setOverlayMode(overlay: boolean): void {
+    this.keyboard.setActive(true);
+    this.pointer.setActive(true);
+    this.pointer.setAllowLock(!overlay);
+  }
+
+  bindLookSurface(element: HTMLElement): void {
+    this.pointer.bindLookSurface(element);
+  }
+
   getIntent(): PlayerIntent {
     let forward = 0;
     let strafe = 0;

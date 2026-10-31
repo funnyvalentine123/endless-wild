@@ -124,8 +124,9 @@ export function scatterVegetation(
     // 不会顺着沙丘斜坡爬到沙子里。
     if (oasis > 0.25 && height > 0.2) {
       const lush = smoothstep(0.25, 0.6, oasis);
-      const distance = world.oasisInfo(x, z)?.distance ?? OASIS.radius;
-      if (distance <= OASIS_WATER_EDGE + 20 && height < 2 && random() < 0.3 * lush) {
+      // 用扰动后的湖岸距离，芦苇与树林带才会贴着弯曲的岸线，而不是围绕正圆排布。
+      const waterDistance = world.oasisInfo(x, z)?.waterDistance ?? OASIS.radius;
+      if (waterDistance <= OASIS_WATER_EDGE + 20 && height < 2 && random() < 0.3 * lush) {
         instances.reed.push({
           x,
           y: height - 0.1,
@@ -139,7 +140,7 @@ export function scatterVegetation(
       // 湖边留出一圈开阔的草岸，树林从岸台外侧才成片长出，
       // 这样从岸上看过去湖面不会被树冠完全挡住，同时也形成“树林环绕湖泊”的轮廓。
       if (
-        distance > OASIS_WATER_EDGE + 40 &&
+        waterDistance > OASIS_WATER_EDGE + 40 &&
         height < 4.5 &&
         slope < 1.8 &&
         random() < 0.24 * lush

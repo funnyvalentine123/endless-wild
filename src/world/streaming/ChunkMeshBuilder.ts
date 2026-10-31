@@ -27,9 +27,16 @@ export class ChunkMeshBuilder {
 
   private readonly houseCache = new Map<string, HousePlacement | null>();
 
-  build(cx: number, cz: number): ChunkView {
+  /**
+   * 构建一个区块。
+   *
+   * detailed=false 时只铺地形网格：外圈区块在雾里几乎看不出来，
+   * 先省掉撒点与房屋的构建开销，等玩家靠近后再升级为完整区块。
+   */
+  build(cx: number, cz: number, detailed = true): ChunkView {
     const originX = cx * CHUNK_SIZE;
     const originZ = cz * CHUNK_SIZE;
+    const key = `${cx},${cz}`;
     const group = new Group();
 
     const geometry = new PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
@@ -71,6 +78,11 @@ export class ChunkMeshBuilder {
     const terrain = new Mesh(geometry, this.materials.terrain);
     terrain.position.set(originX, 0, originZ);
     group.add(terrain);
+
+    // 外圈：只有地形，不撒植被、不放房屋，也不产生碰撞体。
+    if (!detailed) {
+      return { key, cx, cz, group, colliders: [], detailed: false };
+    }
 
     const house = this.houseAt(cx, cz);
 
@@ -114,12 +126,13 @@ export class ChunkMeshBuilder {
     }
 
     return {
-      key: `${cx},${cz}`,
+      key,
       cx,
       cz,
       group,
       colliders: scatter.colliders,
       house: site,
+      detailed: true,
     };
   }
 

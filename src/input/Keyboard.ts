@@ -14,6 +14,8 @@ export class Keyboard {
     if (event.code === 'KeyT') this.onAction('toggle-time');
     if (event.code === 'KeyV') this.onAction('toggle-view');
     if (event.code === 'KeyM') this.onAction('toggle-map');
+    if (event.code === 'KeyN') this.onAction('toggle-sky-view');
+    if (event.code === 'KeyP') this.onAction('toggle-save');
     if (event.code === 'Minus' || event.code === 'NumpadSubtract') this.onAction('speed-down');
     if (event.code === 'Equal' || event.code === 'NumpadAdd') this.onAction('speed-up');
     if (event.code === 'Escape') this.onAction('close-map');

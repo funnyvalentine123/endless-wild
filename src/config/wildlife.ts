@@ -197,6 +197,15 @@ export interface BirdConfig {
   readonly altitudeMax: number;
   readonly scaleMin: number;
   readonly scaleMax: number;
+  /** 地面停留时间与飞行时间的比例（1:3）。 */
+  readonly groundToFlightRatio: number;
+  /** 单次飞行时长范围（秒）；地面时长由它按比例换算。 */
+  readonly flightMin: number;
+  readonly flightMax: number;
+  /** 从巡航高度落到地面的时长（秒）。 */
+  readonly landingDuration: number;
+  /** 从地面升回巡航高度的时长（秒）。 */
+  readonly takeoffDuration: number;
 }
 
 export const BIRD_CONFIG: BirdConfig = {
@@ -204,13 +213,21 @@ export const BIRD_CONFIG: BirdConfig = {
   spawnInterval: 0.35,
   spawnRadiusMin: 35,
   spawnRadiusMax: 150,
-  despawnRadius: 240,
+  // 略大于一次完整飞行（15~26s，约 105~286m）可能飞出的距离，
+  // 让鸟在完成「落地休息」之前不会被提前销毁，地面上才看得到鸟。
+  despawnRadius: 320,
   speedMin: 7,
   speedMax: 11,
   altitudeMin: 28,
   altitudeMax: 50,
   scaleMin: 0.8,
   scaleMax: 1.2,
+  // 每只鸟一次飞行 15~26 秒，落地休息 5~8.7 秒：地面 : 飞行 = 1 : 3。
+  groundToFlightRatio: 1 / 3,
+  flightMin: 15,
+  flightMax: 26,
+  landingDuration: 2.2,
+  takeoffDuration: 1.8,
 };
 
 export interface FishConfig {

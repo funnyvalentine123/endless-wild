@@ -41,6 +41,16 @@ export interface PlayerState {
   phase: number;
 }
 
+/** 存档里保存的玩家状态；与 PlayerState 保持结构兼容。 */
+export interface PlayerRestorePoint {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  walked: number;
+}
+
 export interface CollisionResolver {
   resolveCollisions(x: number, z: number): readonly [number, number];
 }
@@ -103,6 +113,26 @@ export class Player {
   /** 雨天水位会上涨，游泳判定跟随动态水面而不是固定常量。 */
   setWaterLevel(level: number): void {
     this.waterLevelValue = level;
+  }
+
+  /**
+   * 从存档恢复：直接落在保存的位置上，不再走出生点搜索。
+   * 若存档点低于当前地面（几乎不会发生，但可能是旧版本地形），抬回地面；
+   * 存档在半空（跳跃中保存）时保持高度，让重力自然落下。
+   */
+  restore(point: PlayerRestorePoint): void {
+    const state = this.state;
+    const ground = this.world.groundAt(point.x, point.z);
+
+    state.x = point.x;
+    state.z = point.z;
+    state.y = Math.max(point.y, ground);
+    state.vy = 0;
+    state.grounded = state.y <= ground + 1e-3;
+    state.yaw = point.yaw;
+    state.pitch = clamp(point.pitch, PITCH_MIN, PITCH_MAX);
+    state.walked = Math.max(0, point.walked);
+    state.phase = 0;
   }
 
   /** 返回本帧水平移动速度（米/秒），用于角色动画。 */

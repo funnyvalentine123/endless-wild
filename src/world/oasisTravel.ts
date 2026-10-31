@@ -24,18 +24,25 @@ export interface OasisEdgeTarget {
  * 绿洲平均间距十几公里，绝大多数情况下第一圈（±40km）就够了。
  */
 const SEARCH_CELLS = [8, 16, 32, 64];
-/** 落脚点到岸线的距离（米）：站在水边草地上，脚下干燥、湖水就在眼前。 */
-const SHORE_MARGIN = 5;
+/**
+ * 落脚点搜索圈：从湖面半径外侧开始，向外扫到岸线扰动的最远处。
+ * 湖岸是不规则形状，同一方向上水线可能在 190–270m 之间，固定半径会踩到水里。
+ */
+const SHORE_MIN_RADIUS = OASIS.lakeRadius + 20;
+const SHORE_MAX_RADIUS = OASIS_WATER_EDGE + 80;
+const SHORE_RADIUS_STEP = 8;
 /** 在“朝向玩家”的方向附近左右试探，按偏移从小到大排列。 */
 const ANGLE_OFFSETS = [0, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.48, -0.48, 0.6, -0.6];
 
 /**
  * 找到离玩家最近的绿洲，并把落脚点放在绿洲的湖岸边、面朝湖心。
  *
- * 绿洲半径 500m、湖面半径约 190m，而地形区块只加载玩家周围约 256m，
- * 站在绿洲外侧再往里看是看不到湖的（湖还在更远的加载范围之外）。
- * 因此落脚点放在绿洲里的湖岸草地上：脚下是干燥的草滩，正前方就是湖面，
- * 转过身是环绕整片湖水的树林环带。
+ * 绿洲半径 500m、湖面半径约 190m，站在绿洲外侧再往里看，湖往往藏在雾里
+ * （雾距 420m，湖心常常在雾外）。因此落脚点放在绿洲里的湖岸草地上：
+ * 脚下是干燥的草滩，正前方就是湖面，转过身是环绕整片湖水的树林环带。
+ *
+ * 湖岸被噪声扰动成不规则形状，所以落脚点沿径向由内向外扫，取第一个
+ * 干燥且平坦的位置，避免固定半径踩进水里。
  *
  * 只由调试按钮触发，属于一次性计算，直接复用绿洲网格的确定性数据。
  */
@@ -51,33 +58,42 @@ export function findNearestOasisEdge(
   const dx = x - site.x;
   const dz = z - site.z;
   const baseAngle = Math.hypot(dx, dz) > 1 ? Math.atan2(dz, dx) : Math.PI / 2;
-  const distance = Math.max(OASIS_WATER_EDGE - SHORE_MARGIN, OASIS.lakeRadius + 40);
 
   let fallback: OasisEdgeTarget | null = null;
   let fallbackSlope = Number.POSITIVE_INFINITY;
 
   for (const offset of ANGLE_OFFSETS) {
     const angle = baseAngle + offset;
-    const px = site.x + Math.cos(angle) * distance;
-    const pz = site.z + Math.sin(angle) * distance;
-    const ground = world.groundAt(px, pz);
-    // 不会落在湖里；岸边草地始终高于水位，这里只是保险。
-    if (ground < WATER_LEVEL + 0.4) continue;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
 
-    // 坡度太陡的落脚点体验不好，优先选平地。
-    const slope = Math.max(
-      Math.abs(world.groundAt(px + 2, pz) - ground),
-      Math.abs(world.groundAt(px, pz + 2) - ground),
-    );
-    if (slope >= 1.2) {
-      if (slope < fallbackSlope) {
-        fallbackSlope = slope;
-        fallback = makeTarget(px, pz, ground, site, distance);
+    // 沿这个方向由内向外扫：第一个干燥且平坦的点就落在真实水线后方不远处。
+    for (
+      let distance = SHORE_MIN_RADIUS;
+      distance <= SHORE_MAX_RADIUS;
+      distance += SHORE_RADIUS_STEP
+    ) {
+      const px = site.x + cos * distance;
+      const pz = site.z + sin * distance;
+      const ground = world.groundAt(px, pz);
+      // 不会落在湖里；岸边草地始终高于水位，这里只是保险。
+      if (ground < WATER_LEVEL + 0.4) continue;
+
+      // 坡度太陡的落脚点体验不好，优先选平地。
+      const slope = Math.max(
+        Math.abs(world.groundAt(px + 2, pz) - ground),
+        Math.abs(world.groundAt(px, pz + 2) - ground),
+      );
+      if (slope >= 1.2) {
+        if (slope < fallbackSlope) {
+          fallbackSlope = slope;
+          fallback = makeTarget(px, pz, ground, site, distance);
+        }
+        continue;
       }
-      continue;
-    }
 
-    return makeTarget(px, pz, ground, site, distance);
+      return makeTarget(px, pz, ground, site, distance);
+    }
   }
 
   return fallback;

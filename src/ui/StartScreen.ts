@@ -14,8 +14,8 @@ export class StartScreen {
     this.button.addEventListener('click', this.handleClick);
   }
 
-  setReady(seed: number): void {
-    this.loading.textContent = `世界已就绪 · 种子 ${seed}`;
+  setReady(seed: number, note: string | null = null): void {
+    this.loading.textContent = `世界已就绪 · 种子 ${seed}${note ? ` · ${note}` : ''}`;
   }
 
   setError(message: string): void {

@@ -470,8 +470,10 @@ describe('沙漠地形系统', () => {
       expect(world.biomeAt(site.x, site.z)).toBe('湖泊');
       expect(world.biomeAt(ringX, site.z)).toBe('绿洲');
 
-      // 绿洲边界之外不再属于绿洲。
-      expect(world.oasisAt(site.x + site.radius + 20, site.z)).toBe(0);
+      // 绿洲边界之外不再属于绿洲（留出边界扰动可能凸出的最大距离）。
+      const outside =
+        site.radius + OASIS.edgeWarp.amplitude + OASIS.edgeWarp.detailAmplitude + 10;
+      expect(world.oasisAt(site.x + outside, site.z)).toBe(0);
     }
   }, 60_000);
 
@@ -509,6 +511,60 @@ describe('沙漠地形系统', () => {
     expect(trees).toBeGreaterThan(60);
     expect(cacti).toBe(0);
     expect(lily).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('绿洲湖泊与外围森林的轮廓都不规则，而不是正圆', () => {
+    const world = new World(123456);
+    const sites = world.oasisSitesInRect(-40_000, -40_000, 40_000, 40_000);
+    expect(sites.length).toBeGreaterThan(0);
+
+    const DIRECTIONS = 48;
+    const spread = (values: number[]): number => Math.max(...values) - Math.min(...values);
+
+    for (const site of sites.slice(0, 4)) {
+      // 水线半径：沿每个方向由内向外扫，取第一次高出水位的位置。
+      const shoreRadii: number[] = [];
+      // 绿洲外围半径：沿每个方向扫到 oasisAt 刚好降为 0 的位置。
+      const edgeRadii: number[] = [];
+
+      for (let i = 0; i < DIRECTIONS; i++) {
+        const angle = (i / DIRECTIONS) * Math.PI * 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+
+        let shore = OASIS_WATER_EDGE + 80;
+        for (let d = OASIS.lakeRadius - 60; d <= OASIS_WATER_EDGE + 80; d += 2) {
+          if (world.rawHeight(site.x + cos * d, site.z + sin * d) > WATER_LEVEL) {
+            shore = d;
+            break;
+          }
+        }
+        shoreRadii.push(shore);
+
+        let edge = OASIS.radius + 120;
+        for (let d = OASIS.radius - 120; d <= OASIS.radius + 120; d += 2) {
+          if (world.oasisAt(site.x + cos * d, site.z + sin * d) <= 0) {
+            edge = d;
+            break;
+          }
+        }
+        edgeRadii.push(edge);
+      }
+
+      // 一圈半径的极差就是“圆不圆”的量化指标：正圆为 0。
+      expect(spread(shoreRadii)).toBeGreaterThan(20);
+      expect(spread(edgeRadii)).toBeGreaterThan(30);
+
+      // 扰动只是把圆形揉软，不应该破坏湖泊与树林环带的基本尺度。
+      expect(Math.min(...shoreRadii)).toBeGreaterThan(OASIS.lakeRadius - 20);
+      expect(Math.max(...shoreRadii)).toBeLessThan(OASIS_WATER_EDGE + 40);
+      expect(Math.min(...edgeRadii)).toBeGreaterThan(
+        OASIS.radius - OASIS.edgeWarp.amplitude - OASIS.edgeWarp.detailAmplitude,
+      );
+      expect(Math.max(...edgeRadii)).toBeLessThan(
+        OASIS.radius + OASIS.edgeWarp.amplitude + OASIS.edgeWarp.detailAmplitude,
+      );
+    }
   }, 120_000);
 
   it('调试传送能落到最近的沙漠边缘并面朝沙漠', () => {

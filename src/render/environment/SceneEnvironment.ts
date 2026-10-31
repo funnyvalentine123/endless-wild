@@ -1,6 +1,10 @@
 import { Color, Fog, type Scene, type Vector3 } from 'three';
 import { FOG_FAR, FOG_NEAR } from '../../config/render';
 import {
+  SKY_VIEW_FOG_FAR,
+  SKY_VIEW_FOG_NEAR,
+} from '../../config/ui';
+import {
   RAIN_FOG_COLOR,
   SNOW_FOG_COLOR,
   WEATHER_FOG_FAR,
@@ -34,6 +38,8 @@ export class SceneEnvironment {
   private readonly flashlight: Flashlight;
   private readonly fogTint = new Color();
   private starOpacity = 0;
+  private savedFogNear = FOG_NEAR;
+  private savedFogFar = FOG_FAR;
 
   constructor(private readonly scene: Scene) {
     this.lighting = new Lighting(scene);
@@ -81,6 +87,32 @@ export class SceneEnvironment {
   /** 夜间手电筒跟随主角的朝向与俯仰。 */
   applyFlashlight(daylight: DaylightSnapshot, state: PlayerState): void {
     this.flashlight.update(daylight, state);
+  }
+
+  /**
+   * 天穹俯瞰渲染前的临时调整：
+   * 相机离地约 760m，按正常雾距会整片糊成雾，因此换成远雾；
+   * 云层位于相机与地面之间，也一并隐藏，避免遮住地形。
+   */
+  beginSkyView(): void {
+    const fog = this.scene.fog;
+    if (fog instanceof Fog) {
+      this.savedFogNear = fog.near;
+      this.savedFogFar = fog.far;
+      fog.near = SKY_VIEW_FOG_NEAR;
+      fog.far = SKY_VIEW_FOG_FAR;
+    }
+    this.clouds.setVisible(false);
+  }
+
+  /** 天穹俯瞰渲染后恢复主视角的雾与云层。 */
+  endSkyView(): void {
+    const fog = this.scene.fog;
+    if (fog instanceof Fog) {
+      fog.near = this.savedFogNear;
+      fog.far = this.savedFogFar;
+    }
+    this.clouds.setVisible(true);
   }
 
   update(

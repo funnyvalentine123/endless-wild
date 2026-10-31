@@ -20,16 +20,28 @@
     <div>已行进：<b id="dist">0</b> 米</div>
     <div>海拔：<b id="alt">0</b> 米 · 时刻 <b id="clock">08:00</b></div>
     <div>天气：<b id="weatherNow">晴</b></div>
+    <div aria-live="off">帧率：<b id="fps" title="最近 0.5 秒的平均帧率">-</b> FPS</div>
     <div>世界种子：<b id="seed">-</b></div>
   </div>
 
   <div id="mapWrap" class="panel">
     <canvas id="minimap" width="150" height="150" aria-label="小地图"></canvas>
     <div id="compass">N</div>
-    <button id="mapOpen" type="button" aria-haspopup="dialog" aria-expanded="false">大地图 (M)</button>
+    <button id="mapOpen" class="map-button" type="button" aria-haspopup="dialog" aria-expanded="false">大地图 (M)</button>
+    <button
+      id="skyOpen"
+      type="button"
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      title="天穹摄像机：从天空正上方垂直俯瞰（点击或按 N 查看大视野）"
+    >
+      <canvas id="skyCanvas" width="256" height="256" aria-label="天穹摄像机俯瞰视图"></canvas>
+      <span class="sky-label">天穹视角</span>
+    </button>
+    <button id="skyBigOpen" class="map-button" type="button" aria-haspopup="dialog" aria-expanded="false">天穹大视野 (N)</button>
   </div>
 
-  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · -/= 调速 · M 大地图 · Esc 释放鼠标</div>
+  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · -/= 调速 · M 大地图 · N 天穹 · P 存档 · Esc 释放鼠标</div>
 
   <nav id="bar" class="panel" aria-label="游戏操作">
     <div class="speed" role="group" aria-label="移动速度">
@@ -59,6 +71,7 @@
     <button id="bView" type="button" aria-pressed="false">第三人称 (V)</button>
     <button id="bDesert" type="button" title="传送到最近的沙漠边缘（调试用）">去沙漠</button>
     <button id="bOasis" type="button" title="传送到最近的绿洲湖边（调试用）">去绿洲</button>
+    <button id="bSave" type="button" title="打开存档面板：保存、载入、导入导出存档">存档 (P)</button>
     <button id="bNew" type="button">新世界</button>
     <button id="barMore" type="button" aria-expanded="false" aria-label="展开更多操作">更多</button>
   </nav>
@@ -81,6 +94,8 @@
         <kbd>- / =</kbd><span>减速 / 加速移动（也可拖动底部滑杆）</span>
         <kbd>天气</kbd><span>底部可手动切换雨 / 雪与大小</span>
         <kbd>M</kbd><span>打开 3km 范围大地图</span>
+        <kbd>N</kbd><span>打开天穹大视野（再按一次关闭）</span>
+        <kbd>P</kbd><span>存档面板：保存 / 载入 / 导出存档文件</span>
       </div>
       <button id="go" type="button">开始探索</button>
       <div id="loading">正在加载引擎…</div>
@@ -102,7 +117,73 @@
       </div>
       <footer class="big-map-foot">
         <span id="bigMapCoords"></span>
-        <span>网格 500m · 北向上</span>
+        <span>网格 500m · 北向上 · 按住画面拖动转向</span>
+      </footer>
+    </section>
+  </div>
+
+  <div id="skyView" class="big-map-overlay" hidden>
+    <section class="big-map-card panel" role="dialog" aria-modal="true" aria-labelledby="skyViewTitle">
+      <header class="big-map-head">
+        <div>
+          <h2 id="skyViewTitle">天穹视角</h2>
+          <p id="skyViewMeta" class="big-map-meta"></p>
+        </div>
+        <button id="skyViewClose" class="big-map-close" type="button" aria-label="关闭天穹视角">×</button>
+      </header>
+      <div class="big-map-viewport">
+        <canvas id="skyViewCanvas" width="512" height="512" aria-label="天穹摄像机大视野"></canvas>
+      </div>
+      <footer class="big-map-foot">
+        <span id="skyViewCoords"></span>
+        <span>北向上 · 可继续 WASD 行走、按住画面拖动转向</span>
+      </footer>
+    </section>
+  </div>
+
+  <div id="savePanel" class="save-overlay" hidden>
+    <section class="save-card panel" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+      <header class="save-head">
+        <div>
+          <h2 id="saveTitle">存档</h2>
+          <p class="save-meta">存档保存在本机浏览器；导出文件可备份或带到其它设备导入</p>
+        </div>
+        <button id="saveClose" class="big-map-close" type="button" aria-label="关闭存档面板">×</button>
+      </header>
+
+      <div class="save-block">
+        <h3>当前进度</h3>
+        <dl class="save-facts">
+          <div><dt>世界种子</dt><dd id="saveCurrentSeed">—</dd></div>
+          <div><dt>坐标 x , z</dt><dd id="saveCurrentPos">—</dd></div>
+          <div><dt>时刻</dt><dd id="saveCurrentClock">—</dd></div>
+          <div><dt>已行进</dt><dd id="saveCurrentDist">—</dd></div>
+        </dl>
+        <div class="save-actions">
+          <button id="saveLocal" type="button">保存到本地</button>
+          <button id="saveExport" type="button">导出存档文件</button>
+        </div>
+      </div>
+
+      <div class="save-block">
+        <h3>本地存档</h3>
+        <dl class="save-facts">
+          <div><dt>世界种子</dt><dd id="saveLocalSeed">—</dd></div>
+          <div><dt>坐标 x , z</dt><dd id="saveLocalPos">—</dd></div>
+          <div><dt>时刻</dt><dd id="saveLocalClock">—</dd></div>
+          <div><dt>保存于</dt><dd id="saveLocalTime">—</dd></div>
+        </dl>
+        <div class="save-actions">
+          <button id="saveLoad" type="button">载入本地存档</button>
+          <button id="saveImport" type="button">导入存档文件</button>
+          <button id="saveDelete" type="button">删除本地存档</button>
+        </div>
+        <input id="saveFile" type="file" accept=".json,application/json" hidden />
+      </div>
+
+      <p id="saveStatus" class="save-status" aria-live="polite"></p>
+      <footer class="save-foot">
+        启动时若本地存档与当前种子一致，会自动从保存的位置继续。
       </footer>
     </section>
   </div>

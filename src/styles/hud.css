@@ -28,6 +28,19 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* 实时帧率：数字等宽避免跳动，掉到 50 / 30 帧以下变色提示。 */
+#fps {
+  font-variant-numeric: tabular-nums;
+}
+
+#fps[data-level="warn"] {
+  color: #ffce72;
+}
+
+#fps[data-level="bad"] {
+  color: #ff8a72;
+}
+
 #mapWrap {
   position: fixed;
   top: 14px;
@@ -50,7 +63,8 @@
   letter-spacing: 1px;
 }
 
-#mapOpen {
+/* 大地图 / 天穹大视野两个入口按钮共用一套样式。 */
+.map-button {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -65,10 +79,49 @@
   cursor: pointer;
 }
 
-#mapOpen:hover,
-#mapOpen:focus-visible {
+.map-button:hover,
+.map-button:focus-visible {
   background: rgba(255, 255, 255, 0.24);
   outline: none;
+}
+
+#skyOpen {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: zoom-in;
+}
+
+#skyOpen:hover,
+#skyOpen:focus-visible {
+  border-color: rgba(255, 255, 255, 0.55);
+  outline: none;
+}
+
+#skyCanvas {
+  display: block;
+  width: 150px;
+  height: 150px;
+}
+
+#skyOpen .sky-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 16px 0 4px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-align: center;
+  color: #fff;
+  background: linear-gradient(rgba(10, 22, 30, 0), rgba(10, 22, 30, 0.72));
+  pointer-events: none;
 }
 
 #hint {

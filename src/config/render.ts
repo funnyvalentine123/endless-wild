@@ -2,8 +2,8 @@
 export const PIXEL_RATIO_CAP = 1.75;
 export const TONE_MAPPING_EXPOSURE = 1.05;
 
-export const FOG_NEAR = 40;
-export const FOG_FAR = 250;
+export const FOG_NEAR = 65;
+export const FOG_FAR = 420;
 export const INITIAL_FOG_COLOR = 0xbfe3ff;
 
 export const CAMERA_FOV = 70;
@@ -25,6 +25,7 @@ export const CLOUD_HEIGHT_MIN = 110;
 export const CLOUD_HEIGHT_RANGE = 50;
 export const CLOUD_DRIFT_SPEED = 2.5;
 
-export const WATER_SIZE = 700;
-export const WATER_SEGMENTS = 140;
+export const WATER_SIZE = 1000;
+/** 水面跟随玩家移动，边长变大后同步增加分段，保持近处波浪的细腻度。 */
+export const WATER_SEGMENTS = 200;
 export const WATER_SNAP = 5;

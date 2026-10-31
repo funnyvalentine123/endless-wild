@@ -74,6 +74,58 @@ export class Viewport {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * 用第二台相机渲染一块正方形俯瞰视野，并把结果拷贝到 2D 画布。
+   *
+   * 渲染只占用主画布左下角的正方形区域，因此必须在 render() 之前调用：
+   * 紧随其后的主视角渲染会把整块画布重新覆盖，画面不会留下这块区域。
+   * 这样不需要离屏渲染目标，也避免了 readPixels 的同步回读。
+   *
+   * 设备像素数被限制在 2D 画布分辨率（square）以内：目标画布本身只有
+   * square×square，Retina 屏上再按 2~3 倍像素渲染只是白白多出 4~9 倍填充成本，
+   * 天穹大视野打开并移动时就会掉帧。
+   */
+  renderOverview(
+    camera: PerspectiveCamera,
+    context: CanvasRenderingContext2D,
+    square: number,
+  ): void {
+    const renderer = this.renderer;
+    const canvas = renderer.domElement;
+    const pixelRatio = renderer.getPixelRatio();
+    // 正方形必须完整落在画布内；WebGL 视口原点在左下角。
+    const size = Math.max(32, Math.min(square, window.innerWidth, window.innerHeight));
+    const device = Math.min(
+      Math.round(size * pixelRatio),
+      square,
+      canvas.width,
+      canvas.height,
+    );
+    const logical = Math.max(32, Math.floor(device / pixelRatio));
+    // 视口按像素比放大后可能差 1px，用实际生效的设备像素做拷贝源矩形。
+    const source = Math.min(Math.floor(logical * pixelRatio), canvas.height);
+
+    renderer.setScissorTest(true);
+    renderer.setViewport(0, 0, logical, logical);
+    renderer.setScissor(0, 0, logical, logical);
+    renderer.render(this.scene, camera);
+
+    context.drawImage(
+      canvas,
+      0,
+      canvas.height - source,
+      source,
+      source,
+      0,
+      0,
+      context.canvas.width,
+      context.canvas.height,
+    );
+
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  }
+
   dispose(): void {
     window.removeEventListener('resize', this.resizeHandler);
     this.renderer.dispose();

@@ -28,7 +28,7 @@ interface WildlifeGroup {
   readonly label: string;
   readonly count: number;
   update(dt: number, playerX: number, playerZ: number): void;
-  getSightings(): Array<{ x: number; y: number; z: number }>;
+  getSightings(): Array<{ id?: number; x: number; y: number; z: number; mode?: string }>;
   dispose(): void;
 }
 
@@ -184,7 +184,14 @@ export class WildlifeManager {
     return population;
   }
 
-  getSightings(): Array<{ kind: string; x: number; y: number; z: number }> {
+  getSightings(): Array<{
+    kind: string;
+    id?: number;
+    x: number;
+    y: number;
+    z: number;
+    mode?: string;
+  }> {
     return this.groups.flatMap((group) =>
       group.getSightings().map((spot) => ({ kind: group.label, ...spot })),
     );

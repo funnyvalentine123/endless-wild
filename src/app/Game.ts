@@ -16,6 +16,10 @@ import { Hero } from '../player/Hero';
 import { Player } from '../player/Player';
 import { SceneEnvironment } from '../render/environment/SceneEnvironment';
 import { Viewport } from '../render/Viewport';
+import { downloadTextFile } from '../save/download';
+import { SaveService } from '../save/SaveService';
+import { SaveStore } from '../save/SaveStore';
+import { summarizeSave } from '../save/codec';
 import { DayNightCycle } from '../systems/DayNightCycle';
 import { WeatherEffects } from '../systems/WeatherEffects';
 import { WeatherSystem } from '../systems/WeatherSystem';
@@ -23,7 +27,9 @@ import { BigMap } from '../ui/BigMap';
 import { VillageManager } from '../village/VillageManager';
 import { Hud } from '../ui/Hud';
 import { Minimap } from '../ui/Minimap';
+import { SavePanel, type SavePanelModel } from '../ui/SavePanel';
 import { SpeedControl } from '../ui/SpeedControl';
+import { SkyView } from '../ui/SkyView';
 import { StartScreen } from '../ui/StartScreen';
 import { Toolbar } from '../ui/Toolbar';
 import { WeatherControl } from '../ui/WeatherControl';
@@ -64,6 +70,9 @@ export class Game {
   private readonly hud: Hud;
   private readonly minimap: Minimap;
   private readonly bigMap: BigMap;
+  private readonly skyView: SkyView;
+  private readonly save: SaveService;
+  private readonly savePanel: SavePanel;
   private readonly startScreen: StartScreen;
   private readonly toolbar: Toolbar;
   private readonly speedControl: SpeedControl;
@@ -76,6 +85,7 @@ export class Game {
   private fastTime = false;
   private thirdPerson = false;
   private mapOpen = false;
+  private restoredFromSave = false;
   private elapsed = 0;
   private desertFactor = 0;
   private uiWeatherBlocked = false;
@@ -84,7 +94,9 @@ export class Game {
   private uiWeatherAuto: boolean | null = null;
 
   constructor() {
-    this.seed = resolveWorldSeed();
+    // 有本地存档时把它的种子作为兜底：URL 与上次游玩的世界优先，避免旧存档把世界拉回去。
+    const archived = SaveStore.local().load();
+    this.seed = resolveWorldSeed(window.location.search, undefined, archived?.seed ?? null);
     this.world = new World(this.seed);
 
     const canvas = requireElement<HTMLCanvasElement>('c');
@@ -121,6 +133,31 @@ export class Game {
     this.dayNight = new DayNightCycle();
     this.weather = new WeatherSystem();
     this.weatherEffects = new WeatherEffects();
+
+    this.save = new SaveService({
+      seed: this.seed,
+      getHour: () => this.dayNight.hour,
+      setHour: (hour) => this.dayNight.setHour(hour),
+      getPlayer: () => {
+        const state = this.player.state;
+        return {
+          x: state.x,
+          y: state.y,
+          z: state.z,
+          yaw: state.yaw,
+          pitch: state.pitch,
+          walked: state.walked,
+        };
+      },
+      restorePlayer: (player) => {
+        this.player.restore(player);
+        this.cameraRig.reset();
+      },
+      reloadToSeed: (seed) => this.reloadToSeed(seed),
+    });
+    // 启动续档：只有存档与当前种子一致时才回到保存点，换世界不会被旧存档干扰。
+    this.restoredFromSave = this.save.restoreOnStart();
+
     this.desertFactor = this.world.desertAt(this.player.state.x, this.player.state.z);
     this.weather.setDesertFactor(this.desertFactor);
 
@@ -129,6 +166,10 @@ export class Game {
     this.bigMap = new BigMap(this.world, {
       onOpenRequest: () => this.openMap(),
       onCloseRequest: () => this.closeMap(),
+    });
+    this.skyView = new SkyView(this.viewport, this.environment, this.world, {
+      onOpenRequest: () => this.openSkyView(),
+      onCloseRequest: () => this.closeSkyView(),
     });
 
     this.input = new InputManager(
@@ -140,6 +181,9 @@ export class Game {
       },
       this.handleInputAction,
     );
+    // 大视野打开时不请求 Pointer Lock，改为按住地图画面拖动转向。
+    this.input.bindLookSurface(requireElement<HTMLElement>('bigMapCanvas'));
+    this.input.bindLookSurface(requireElement<HTMLElement>('skyViewCanvas'));
 
     this.startScreen = new StartScreen(() => this.beginExploration());
     this.toolbar = new Toolbar({
@@ -148,6 +192,7 @@ export class Game {
       onToggleView: () => this.setThirdPerson(!this.thirdPerson),
       onTeleportDesert: () => this.teleportToDesert(),
       onTeleportOasis: () => this.teleportToOasis(),
+      onOpenSave: () => this.openSavePanel(),
       onNewWorld: () => this.loadNewWorld(),
     });
     this.speedControl = new SpeedControl({
@@ -161,9 +206,24 @@ export class Game {
     });
     this.weatherControl.setState(this.weather.snapshot);
 
+    this.savePanel = new SavePanel(
+      {
+        save: () => this.save.saveLocal().message,
+        load: () => this.save.loadLocal().message,
+        export: () => this.exportSaveFile(),
+        import: (text) => this.save.importText(text).message,
+        remove: () => {
+          if (!window.confirm('删除本地存档？此操作无法撤销。')) return '已取消删除。';
+          return this.save.removeLocal().message;
+        },
+        model: () => this.savePanelModel(),
+      },
+      { onCloseRequest: () => this.closeSavePanel() },
+    );
+
     this.loop = new GameLoop((dt) => this.update(dt));
 
-    this.startScreen.setReady(this.seed);
+    this.startScreen.setReady(this.seed, this.restoredFromSave ? '已读取本地存档' : null);
     this.hud.forceUpdate(
       this.player.state,
       this.dayNight.hour,
@@ -190,6 +250,8 @@ export class Game {
     this.roadPropAssets.dispose();
     this.materials.dispose();
     this.bigMap.dispose();
+    this.skyView.dispose();
+    this.savePanel.dispose();
     this.startScreen.dispose();
     this.toolbar.dispose();
     this.speedControl.dispose();
@@ -198,9 +260,6 @@ export class Game {
   }
 
   private update(dt: number): void {
-    // 地图打开时冻结模拟：玩家、昼夜、区块流式加载都不推进。
-    if (this.mapOpen) return;
-
     this.elapsed += dt;
 
     // 天气先推进，让玩家物理和水面使用本帧的新水位。
@@ -255,6 +314,9 @@ export class Game {
       formatWeatherLabel(this.weather.kind, this.weather.level),
     );
     this.minimap.update(dt, state);
+    this.bigMap.update(dt, state);
+    // 天穹俯瞰必须在主视角渲染之前：它借用画布一角渲染后立即拷走。
+    if (this.started) this.skyView.update(dt, state);
 
     this.viewport.render();
   }
@@ -271,8 +333,12 @@ export class Game {
   private openMap(): void {
     if (!this.started || this.mapOpen) return;
 
+    // 先收起存档面板：它与大视野互斥，且不希望在打开地图时重新锁定鼠标。
+    this.savePanel.close();
     this.mapOpen = true;
-    this.input.setActive(false);
+    // 两个大视野不同时打开：大地图会完全盖住天穹视角。
+    this.skyView.close();
+    this.input.setOverlayMode(true);
     if (document.pointerLockElement) document.exitPointerLock();
     this.bigMap.open(this.player.state);
   }
@@ -282,13 +348,100 @@ export class Game {
 
     this.mapOpen = false;
     this.bigMap.close();
-    this.input.setActive(true);
-    if (!this.input.isTouch) requestPointerLock(this.canvas);
+    this.releaseOverlayInput();
   }
 
   private toggleMap(): void {
     if (this.mapOpen) this.closeMap();
     else this.openMap();
+  }
+
+  /** N 键：打开 / 关闭天穹大视野。 */
+  private toggleSkyView(): void {
+    if (!this.started) return;
+    if (this.skyView.isOpen) this.closeSkyView();
+    else this.openSkyView();
+  }
+
+  /** 打开天穹大视野：与大地图同时只保留一个，但仍可继续行走。 */
+  private openSkyView(): void {
+    if (!this.started || this.skyView.isOpen) return;
+
+    this.savePanel.close();
+    if (this.mapOpen) {
+      this.mapOpen = false;
+      this.bigMap.close();
+    }
+    this.skyView.open(this.player.state);
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeSkyView(): void {
+    if (!this.skyView.isOpen) return;
+
+    this.skyView.close();
+    this.releaseOverlayInput();
+  }
+
+  /** Esc：优先关掉正在打开的覆盖层（存档面板 → 天穹 → 大地图）。 */
+  private closeOverlays(): void {
+    if (this.savePanel.isOpen) this.closeSavePanel();
+    else if (this.skyView.isOpen) this.closeSkyView();
+    else if (this.mapOpen) this.closeMap();
+  }
+
+  /** 存档面板 / 大视野都关掉后，才把 Pointer Lock 与鼠标转向交还给游戏。 */
+  private releaseOverlayInput(): void {
+    if (this.mapOpen || this.skyView.isOpen || this.savePanel.isOpen) return;
+
+    this.input.setOverlayMode(false);
+    if (!this.input.isTouch) requestPointerLock(this.canvas);
+  }
+
+  /** P 键 / 底部「存档」按钮：打开或关闭存档面板。 */
+  private toggleSavePanel(): void {
+    if (this.savePanel.isOpen) this.closeSavePanel();
+    else this.openSavePanel();
+  }
+
+  private openSavePanel(): void {
+    if (!this.started || this.savePanel.isOpen) return;
+
+    // 先让面板进入打开状态：随后关闭大视野时 releaseOverlayInput 不会重新锁定鼠标。
+    this.savePanel.open();
+    if (this.mapOpen) this.closeMap();
+    if (this.skyView.isOpen) this.closeSkyView();
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeSavePanel(): void {
+    if (!this.savePanel.isOpen) return;
+
+    this.savePanel.close();
+    this.releaseOverlayInput();
+  }
+
+  private exportSaveFile(): string {
+    const { name, text } = this.save.createExport();
+    downloadTextFile(name, text);
+    return `已导出存档文件：${name}`;
+  }
+
+  private savePanelModel(): SavePanelModel {
+    const local = this.save.readLocal();
+    return {
+      current: summarizeSave(this.save.snapshot()),
+      local: local ? summarizeSave(local) : null,
+      localAvailable: this.save.localAvailable,
+    };
+  }
+
+  /** 载入另一个种子的存档：写回种子后整页重载，重载后自动续档。 */
+  private reloadToSeed(seed: number): void {
+    persistWorldSeed(seed);
+    window.location.search = buildSeedUrl(seed);
   }
 
   private setAutoWalk(enabled: boolean): void {
@@ -393,7 +546,9 @@ export class Game {
     else if (action === 'toggle-time') this.setFastTime(!this.fastTime);
     else if (action === 'toggle-view') this.setThirdPerson(!this.thirdPerson);
     else if (action === 'toggle-map') this.toggleMap();
-    else if (action === 'close-map' && this.mapOpen) this.closeMap();
+    else if (action === 'toggle-sky-view') this.toggleSkyView();
+    else if (action === 'toggle-save') this.toggleSavePanel();
+    else if (action === 'close-map') this.closeOverlays();
     else if (action === 'speed-down') this.setSpeedScale(this.player.stepSpeedScale(-1));
     else if (action === 'speed-up') this.setSpeedScale(this.player.stepSpeedScale(1));
   };
@@ -413,6 +568,28 @@ export class Game {
       desertFactor: () => this.desertFactor,
       toDesertEdge: () => this.teleportToDesert(),
       toOasisEdge: () => this.teleportToOasis(),
+      openSkyView: () => this.openSkyView(),
+      closeSkyView: () => this.closeSkyView(),
+      isBigMapOpen: () => this.bigMap.isOpen,
+      isSkyViewOpen: () => this.skyView.isOpen,
+      getFps: () => this.hud.fps,
+      renderStats: () => ({
+        // info 在每次 render 后重置，这里读到的是最后一次主视角渲染的统计。
+        drawCalls: this.viewport.renderer.info.render.calls,
+        triangles: this.viewport.renderer.info.render.triangles,
+        geometries: this.viewport.renderer.info.memory.geometries,
+        textures: this.viewport.renderer.info.memory.textures,
+        chunks: this.streamer.chunks.size,
+      }),
+      openSavePanel: () => this.openSavePanel(),
+      closeSavePanel: () => this.closeSavePanel(),
+      isSavePanelOpen: () => this.savePanel.isOpen,
+      didRestoreSave: () => this.restoredFromSave,
+      saveGame: () => this.save.saveLocal(),
+      loadGame: () => this.save.loadLocal(),
+      getLocalSave: () => this.save.readLocal(),
+      exportSaveText: () => this.save.createExport(),
+      importSaveText: (text: string) => this.save.importText(text),
       getHour: () => this.dayNight.hour,
       setHour: (hour: number) => this.dayNight.setHour(hour),
       getWeather: () => ({

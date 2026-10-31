@@ -29,6 +29,30 @@ export const OASIS = {
   roadClearance: 800,
   /** 在网格中心附近寻找低洼点的搜索步长（米）。 */
   depressionSearch: 900,
+
+  /**
+   * 绿洲边界扰动：把“标准圆”揉成柔软的有机形状。
+   * 低频大起伏决定整体轮廓，高频小起伏让边缘有自然的凹凸。
+   * 振幅是距离场上的偏移量（米），因此边界会在半径两侧摆动。
+   */
+  edgeWarp: {
+    amplitude: 58,
+    frequency: 0.0018,
+    detailAmplitude: 24,
+    detailFrequency: 0.0062,
+    offsetX: 21.4,
+    offsetZ: -37.8,
+  },
+
+  /** 湖岸扰动：湖水同样不做正圆，岸线在 ±50m 范围内起伏。 */
+  lakeWarp: {
+    amplitude: 34,
+    frequency: 0.0042,
+    detailAmplitude: 15,
+    detailFrequency: 0.013,
+    offsetX: -58.3,
+    offsetZ: 12.6,
+  },
 } as const;
 
 /** 湖面 + 岸边的半径；岸边以外才是树林带。 */

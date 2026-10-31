@@ -19,8 +19,10 @@ export interface OasisSite {
 }
 
 export interface OasisInfo extends OasisSite {
-  /** 到绿洲中心的距离。 */
+  /** 到绿洲中心的距离（边界扰动后），用于判断覆盖因子的衰减。 */
   distance: number;
+  /** 湖岸扰动后的距离，用于判断水岸、芦苇与树林带的位置。 */
+  waterDistance: number;
   /** 0–1 的绿洲覆盖因子，边缘平滑衰减。 */
   factor: number;
 }
@@ -151,10 +153,11 @@ export class TerrainSurface {
 
     // 绿洲：在最低的沙丘洼地里挖出湖盆，外圈留出高出水面的树林台地，
     // 再向四周沙丘平滑过渡。湖面直接复用全局水面。
+    // 湖岸与外围边界都带低频扰动，因此不会是标准圆形。
     const oasis = this.nearestOasis(x, z);
     if (oasis) {
       const blend = this.oasisBlend(oasis.distance);
-      if (blend > 0) height = lerp(height, this.oasisFloorHeight(oasis.distance), blend);
+      if (blend > 0) height = lerp(height, this.oasisFloorHeight(x, z, oasis.rawDistance), blend);
     }
 
     return height;
@@ -175,6 +178,7 @@ export class TerrainSurface {
       z: oasis.z,
       radius: oasis.radius,
       distance: oasis.distance,
+      waterDistance: this.oasisLakeDistance(x, z, oasis.rawDistance),
       factor: this.oasisBlend(oasis.distance),
     };
   }
@@ -275,7 +279,9 @@ export class TerrainSurface {
   }
 
   /** 绿洲地面高度：湖盆低于水位，湖岸与树林环带略高于水位。 */
-  private oasisFloorHeight(distance: number): number {
+  private oasisFloorHeight(x: number, z: number, rawDistance: number): number {
+    // 湖岸用扰动后的距离，因此湖水边界不是正圆。
+    const distance = this.oasisLakeDistance(x, z, rawDistance);
     if (distance <= OASIS.lakeRadius) return WATER_LEVEL - OASIS.depth;
     if (distance <= OASIS_WATER_EDGE) {
       return lerp(
@@ -287,23 +293,67 @@ export class TerrainSurface {
     return WATER_LEVEL + OASIS.shoreHeight;
   }
 
-  /** 最近的绿洲中心；超出半径时返回 null。每帧/每顶点最多查 3×3 个缓存单元。 */
-  private nearestOasis(x: number, z: number): (OasisSite & { distance: number }) | null {
+  /** 把“到绿洲中心的距离”揉成柔软的有机轮廓：外边界在半径两侧摆动。 */
+  private oasisEdgeDistance(x: number, z: number, rawDistance: number): number {
+    const warp = OASIS.edgeWarp;
+    return (
+      rawDistance +
+      this.noise.warp(x * warp.frequency + warp.offsetX, z * warp.frequency + warp.offsetZ) *
+        warp.amplitude +
+      this.noise.warp(
+        x * warp.detailFrequency - warp.offsetZ,
+        z * warp.detailFrequency + warp.offsetX,
+      ) * warp.detailAmplitude
+    );
+  }
+
+  /** 湖岸的扰动距离：让湖面边界也跟着弯曲，而不是一个标准圆。 */
+  private oasisLakeDistance(x: number, z: number, rawDistance: number): number {
+    const warp = OASIS.lakeWarp;
+    return (
+      rawDistance +
+      this.noise.warp(x * warp.frequency + warp.offsetX, z * warp.frequency + warp.offsetZ) *
+        warp.amplitude +
+      this.noise.warp(
+        x * warp.detailFrequency - warp.offsetZ,
+        z * warp.detailFrequency + warp.offsetX,
+      ) * warp.detailAmplitude
+    );
+  }
+
+  /**
+   * 最近的绿洲中心；超出半径时返回 null。每帧/每顶点最多查 3×3 个缓存单元。
+   *
+   * 候选范围按“半径 + 边界扰动的最大偏移”放宽，再用扰动后的距离判断是否还在绿洲内，
+   * 这样轮廓可以凸出或凹进原始半径，而不会在凸出的那部分被裁掉。
+   */
+  private nearestOasis(
+    x: number,
+    z: number,
+  ): (OasisSite & { distance: number; rawDistance: number }) | null {
     const cellX = Math.floor(x / OASIS.cellSize);
     const cellZ = Math.floor(z / OASIS.cellSize);
-    const radius = OASIS.radius;
+    const reach =
+      OASIS.radius + OASIS.edgeWarp.amplitude + OASIS.edgeWarp.detailAmplitude;
 
-    let best: (OasisSite & { distance: number }) | null = null;
+    let best: (OasisSite & { distance: number; rawDistance: number }) | null = null;
     for (let offsetX = -1; offsetX <= 1; offsetX++) {
       for (let offsetZ = -1; offsetZ <= 1; offsetZ++) {
         const site = this.oasisSite(cellX + offsetX, cellZ + offsetZ);
         if (!site) continue;
-        const distance = Math.hypot(x - site.x, z - site.z);
-        if (distance >= radius) continue;
-        if (best === null || distance < best.distance) best = { ...site, distance };
+        const rawDistance = Math.hypot(x - site.x, z - site.z);
+        if (rawDistance >= reach) continue;
+        if (best === null || rawDistance < best.rawDistance) {
+          best = {
+            ...site,
+            rawDistance,
+            distance: this.oasisEdgeDistance(x, z, rawDistance),
+          };
+        }
       }
     }
 
+    if (best === null || best.distance >= OASIS.radius) return null;
     return best;
   }
 

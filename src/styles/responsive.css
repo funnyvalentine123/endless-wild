@@ -10,6 +10,11 @@
     height: 100px;
   }
 
+  #skyCanvas {
+    width: 100px;
+    height: 100px;
+  }
+
   #bar {
     gap: 6px;
   }
@@ -41,5 +46,19 @@
 @media (max-width: 560px) {
   #hint {
     bottom: 112px;
+  }
+}
+
+/* 矮屏：右上角面板（小地图 + 天穹视图）整体压缩，避免盖住底部操作栏。 */
+@media (max-height: 680px) {
+  #minimap,
+  #skyCanvas {
+    width: 92px;
+    height: 92px;
+  }
+
+  #skyOpen .sky-label {
+    padding-top: 10px;
+    font-size: 10px;
   }
 }

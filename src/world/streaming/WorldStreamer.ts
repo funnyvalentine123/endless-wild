@@ -1,5 +1,6 @@
 import { InstancedMesh, Mesh, type Scene } from 'three';
 import {
+  CHUNK_DETAIL_RADIUS,
   CHUNK_RADIUS,
   CHUNK_SIZE,
   CHUNK_UNLOAD_MARGIN,
@@ -38,21 +39,40 @@ export class WorldStreamer {
     const forwardX = -Math.sin(yaw);
     const forwardZ = -Math.cos(yaw);
 
-    const needed: Array<{ key: string; cx: number; cz: number; priority: number }> = [];
+    const needed: Array<{
+      key: string;
+      cx: number;
+      cz: number;
+      priority: number;
+      detailed: boolean;
+      upgrade: boolean;
+    }> = [];
     for (let dx = -CHUNK_RADIUS; dx <= CHUNK_RADIUS; dx++) {
       for (let dz = -CHUNK_RADIUS; dz <= CHUNK_RADIUS; dz++) {
-        if (dx * dx + dz * dz > (CHUNK_RADIUS + 0.5) ** 2) continue;
+        const distance = Math.hypot(dx, dz);
+        if (distance > CHUNK_RADIUS + 0.5) continue;
 
         const cx = playerChunkX + dx;
         const cz = playerChunkZ + dz;
         const key = `${cx},${cz}`;
-        if (this.chunkMap.has(key)) continue;
+        // 只有近处才需要植被、房屋等完整内容；外圈先铺地形。
+        const detailed = distance <= CHUNK_DETAIL_RADIUS;
+        const existing = this.chunkMap.get(key);
+
+        if (existing) {
+          if (existing.detailed || !detailed) continue;
+          // 走近外圈区块：把它重建为完整区块。始终排在新区块之前。
+          needed.push({ key, cx, cz, priority: distance - 12, detailed: true, upgrade: true });
+          continue;
+        }
 
         needed.push({
           key,
           cx,
           cz,
-          priority: Math.hypot(dx, dz) - (dx * forwardX + dz * forwardZ) * 0.6,
+          priority: distance - (dx * forwardX + dz * forwardZ) * 0.6,
+          detailed,
+          upgrade: false,
         });
       }
     }
@@ -61,7 +81,12 @@ export class WorldStreamer {
     const buildCount = Math.min(budget, needed.length);
     for (let i = 0; i < buildCount; i++) {
       const item = needed[i]!;
-      const chunk = this.chunkBuilder.build(item.cx, item.cz);
+      if (item.upgrade) {
+        const previous = this.chunkMap.get(item.key);
+        if (previous) this.disposeChunk(previous);
+      }
+
+      const chunk = this.chunkBuilder.build(item.cx, item.cz, item.detailed);
       this.chunkMap.set(item.key, chunk);
       this.scene.add(chunk.group);
     }

@@ -3,6 +3,8 @@ export type InputAction =
   | 'toggle-time'
   | 'toggle-view'
   | 'toggle-map'
+  | 'toggle-sky-view'
+  | 'toggle-save'
   | 'close-map'
   | 'speed-down'
   | 'speed-up';

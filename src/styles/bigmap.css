@@ -6,9 +6,24 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(4, 12, 16, 0.64);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(4, 12, 16, 0.74);
+}
+
+/*
+ * 两个大视野都盖在实时渲染的 3D 画面上：全屏 backdrop-filter 每帧都要重新模糊整屏，
+ * 会让大地图 / 天穹大视野打开并行走时明显掉帧。这里只用更深的底色，不再做实时模糊。
+ */
+#bigMap,
+#skyView {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+#bigMap .big-map-card,
+#skyView .big-map-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(10, 22, 30, 0.88);
 }
 
 .big-map-overlay[hidden] {
@@ -73,10 +88,14 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-#bigMapCanvas {
+#bigMapCanvas,
+#skyViewCanvas {
   display: block;
   width: 100%;
   height: 100%;
+  /* 按住画面拖动即可转向（不占用 Pointer Lock，保留光标点关闭按钮）。 */
+  cursor: grab;
+  touch-action: none;
 }
 
 .big-map-loading {

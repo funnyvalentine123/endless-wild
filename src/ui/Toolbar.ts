@@ -6,6 +6,7 @@ export interface ToolbarHandlers {
   onToggleView: () => void;
   onTeleportDesert: () => void;
   onTeleportOasis: () => void;
+  onOpenSave: () => void;
   onNewWorld: () => void;
 }
 
@@ -25,6 +26,7 @@ export class Toolbar {
   private readonly viewButton = requireElement<HTMLButtonElement>('bView');
   private readonly desertButton = requireElement<HTMLButtonElement>('bDesert');
   private readonly oasisButton = requireElement<HTMLButtonElement>('bOasis');
+  private readonly saveButton = requireElement<HTMLButtonElement>('bSave');
   private readonly newButton = requireElement<HTMLButtonElement>('bNew');
   private readonly moreButton = requireElement<HTMLButtonElement>('barMore');
   private readonly items: HTMLElement[];
@@ -36,6 +38,7 @@ export class Toolbar {
   private readonly handleView = (): void => this.handlers.onToggleView();
   private readonly handleDesert = (): void => this.handlers.onTeleportDesert();
   private readonly handleOasis = (): void => this.handlers.onTeleportOasis();
+  private readonly handleSave = (): void => this.handlers.onOpenSave();
   private readonly handleNew = (): void => this.handlers.onNewWorld();
   private readonly handleMore = (): void => this.setOpen(!this.bar.classList.contains('open'));
   private readonly handleBarClick = (event: MouseEvent): void => {
@@ -59,6 +62,7 @@ export class Toolbar {
     this.viewButton.addEventListener('click', this.handleView);
     this.desertButton.addEventListener('click', this.handleDesert);
     this.oasisButton.addEventListener('click', this.handleOasis);
+    this.saveButton.addEventListener('click', this.handleSave);
     this.newButton.addEventListener('click', this.handleNew);
     this.moreButton.addEventListener('click', this.handleMore);
     this.bar.addEventListener('click', this.handleBarClick);
@@ -87,6 +91,7 @@ export class Toolbar {
     this.viewButton.removeEventListener('click', this.handleView);
     this.desertButton.removeEventListener('click', this.handleDesert);
     this.oasisButton.removeEventListener('click', this.handleOasis);
+    this.saveButton.removeEventListener('click', this.handleSave);
     this.newButton.removeEventListener('click', this.handleNew);
     this.moreButton.removeEventListener('click', this.handleMore);
     this.bar.removeEventListener('click', this.handleBarClick);
