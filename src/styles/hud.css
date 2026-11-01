@@ -98,6 +98,12 @@
   cursor: zoom-in;
 }
 
+/* 天穹视角需要合成解锁；未解锁时用 hidden 隐藏两个入口（覆盖上面的 display:block）。 */
+#skyOpen[hidden],
+#skyBigOpen[hidden] {
+  display: none;
+}
+
 #skyOpen:hover,
 #skyOpen:focus-visible {
   border-color: rgba(255, 255, 255, 0.55);
@@ -146,4 +152,28 @@
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.7);
   pointer-events: none;
+}
+
+/* 收集提示：宝石飞进身体后短暂出现，只做淡入淡出，不参与布局。 */
+#toast {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  z-index: 20;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(10, 22, 30, 0.82);
+  color: #ffe9a8;
+  font-size: 13px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -8px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#toast[data-visible="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }

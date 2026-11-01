@@ -24,7 +24,7 @@ export interface SkyViewHandlers {
 /**
  * 天穹摄像机：架在天空正上方、玩家头顶的垂直俯瞰镜头。
  *
- * 缩略图常驻右上角小地图下方，点击（或按 N）打开与大地图同款的大视野。
+ * 解锁后缩略图才会出现在右上角小地图下方，点击（或按 N）打开与大地图同款的大视野；
  * 两种尺寸都复用同一个相机与同一次渲染：关闭大视野时低频刷新缩略图；
  * 打开后每帧把上一张俯瞰图按玩家位移像素平移到画面中心，3D 俯瞰本身只需
  * `SKY_VIEW_INTERVAL`（12fps）重渲染一次，走起来既跟手又不掉帧。
@@ -53,6 +53,8 @@ export class SkyView {
 
   private timer = 0;
   private coordsTimer = 0;
+  /** 天穹视角需要先在合成台解锁：未解锁时入口隐藏、也不渲染俯瞰。 */
+  private unlocked = false;
   /** 最近一次 3D 渲染时相机所在的水平位置。 */
   private renderedX = Number.NaN;
   private renderedZ = Number.NaN;
@@ -85,6 +87,9 @@ export class SkyView {
     )}m · 北向上`;
     this.coords.textContent = '';
     this.setExpanded(false);
+    // 初始未解锁：两个入口都不显示，避免在 HUD 上留下空按钮。
+    this.thumbButton.hidden = true;
+    this.bigButton.hidden = true;
 
     this.thumbButton.addEventListener('click', this.handleOpenRequest);
     this.bigButton.addEventListener('click', this.handleOpenRequest);
@@ -96,8 +101,17 @@ export class SkyView {
     return !this.overlay.hidden;
   }
 
+  /** 由 Game 在解锁状态变化时调用：未解锁时隐藏缩略图与「天穹大视野」按钮。 */
+  setUnlocked(value: boolean): void {
+    this.unlocked = value;
+    this.thumbButton.hidden = !value;
+    this.bigButton.hidden = !value;
+    if (!value) this.close();
+    else this.timer = 0;
+  }
+
   open(state: PlayerState): void {
-    if (this.isOpen) return;
+    if (!this.unlocked || this.isOpen) return;
 
     this.overlay.hidden = false;
     this.setExpanded(true);
@@ -140,6 +154,8 @@ export class SkyView {
    * 每帧调用：镜头始终在玩家正上方，按“大视野打开/关闭”选择刷新策略。
    */
   update(dt: number, state: PlayerState): void {
+    if (!this.unlocked) return;
+
     this.timer += dt;
     this.coordsTimer += dt;
 

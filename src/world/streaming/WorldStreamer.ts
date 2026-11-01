@@ -3,6 +3,7 @@ import {
   CHUNK_DETAIL_RADIUS,
   CHUNK_RADIUS,
   CHUNK_SIZE,
+  CHUNK_STREAM_MS,
   CHUNK_UNLOAD_MARGIN,
   ROAD_SEGMENT_LENGTH,
 } from '../../config/world';
@@ -18,6 +19,24 @@ import type { ChunkView, RoadView } from './types';
 export class WorldStreamer {
   private readonly chunkMap = new Map<string, ChunkView>();
   private readonly roadMap = new Map<number, RoadView>();
+  /** 地形已就绪、等待补植被与房屋的区块。 */
+  private pendingDecoration: ChunkView[] = [];
+  /** 上一帧是否在补内容：与建造地形交替进行，保证单个区块的工作被拆到两帧。 */
+  private decoratedLastFrame = false;
+
+  /** 构建统计：用于定位“远处生成区块时掉帧”。 */
+  private buildCount = 0;
+  private lastBuildMs = 0;
+  private maxBuildMs = 0;
+  private frameBuildMs = 0;
+  private lastFrameBuilds = 0;
+  private terrainBuilds = 0;
+  private terrainBuildMs = 0;
+  private detailBuilds = 0;
+  private detailBuildMs = 0;
+  private decorateBuilds = 0;
+  private decorateBuildMs = 0;
+  private lastDecorateMs = 0;
 
   constructor(
     private readonly scene: Scene,
@@ -33,7 +52,49 @@ export class WorldStreamer {
     return this.roadMap;
   }
 
-  update(playerX: number, playerZ: number, yaw: number, budget: number): void {
+  /** 调试：本帧区块构建耗时与累计统计。 */
+  stats(): {
+    chunks: number;
+    roads: number;
+    builds: number;
+    lastBuildMs: number;
+    maxBuildMs: number;
+    frameBuildMs: number;
+    lastFrameBuilds: number;
+    avgTerrainMs: number;
+    avgDetailMs: number;
+    avgDecorateMs: number;
+    lastDecorateMs: number;
+    pendingDecoration: number;
+  } {
+    return {
+      chunks: this.chunkMap.size,
+      roads: this.roadMap.size,
+      builds: this.buildCount,
+      lastBuildMs: Number(this.lastBuildMs.toFixed(2)),
+      maxBuildMs: Number(this.maxBuildMs.toFixed(2)),
+      frameBuildMs: Number(this.frameBuildMs.toFixed(2)),
+      lastFrameBuilds: this.lastFrameBuilds,
+      avgTerrainMs: Number((this.terrainBuildMs / Math.max(1, this.terrainBuilds)).toFixed(2)),
+      avgDetailMs: Number((this.detailBuildMs / Math.max(1, this.detailBuilds)).toFixed(2)),
+      avgDecorateMs: Number((this.decorateBuildMs / Math.max(1, this.decorateBuilds)).toFixed(2)),
+      lastDecorateMs: Number(this.lastDecorateMs.toFixed(2)),
+      pendingDecoration: this.pendingDecoration.length,
+    };
+  }
+
+  update(
+    playerX: number,
+    playerZ: number,
+    yaw: number,
+    budget: number,
+    budgetMs = CHUNK_STREAM_MS,
+  ): void {
+    const frameStart = performance.now();
+    this.lastFrameBuilds = 0;
+    // 补内容与建地形交替：一帧只做一件事，避免“地形 + 撒点”在同一个帧里叠加成一次大卡顿。
+    const decorateNow = this.pendingDecoration.length > 0 && !this.decoratedLastFrame;
+    this.decoratedLastFrame = decorateNow;
     const playerChunkX = Math.round(playerX / CHUNK_SIZE);
     const playerChunkZ = Math.round(playerZ / CHUNK_SIZE);
     const forwardX = -Math.sin(yaw);
@@ -60,7 +121,8 @@ export class WorldStreamer {
         const existing = this.chunkMap.get(key);
 
         if (existing) {
-          if (existing.detailed || !detailed) continue;
+          // 已经补全内容，或已经在等待补内容：都不用再排队。
+          if (existing.detailed || !detailed || existing.needsDecoration) continue;
           // 走近外圈区块：把它重建为完整区块。始终排在新区块之前。
           needed.push({ key, cx, cz, priority: distance - 12, detailed: true, upgrade: true });
           continue;
@@ -80,15 +142,51 @@ export class WorldStreamer {
 
     const buildCount = Math.min(budget, needed.length);
     for (let i = 0; i < buildCount; i++) {
+      // 这一帧要补内容，就先把地形建造留到下一帧。
+      if (decorateNow) break;
       const item = needed[i]!;
       if (item.upgrade) {
         const previous = this.chunkMap.get(item.key);
         if (previous) this.disposeChunk(previous);
       }
 
-      const chunk = this.chunkBuilder.build(item.cx, item.cz, item.detailed);
+      const started = performance.now();
+      const chunk = this.chunkBuilder.buildTerrain(item.cx, item.cz, item.detailed);
+      const elapsed = performance.now() - started;
+      this.buildCount++;
+      this.lastBuildMs = elapsed;
+      if (elapsed > this.maxBuildMs) this.maxBuildMs = elapsed;
+      this.lastFrameBuilds++;
+      if (item.detailed) {
+        // 植被与房屋留给后面的帧补，避免“地形 + 撒点”一起顶出一次大卡顿。
+        this.detailBuilds++;
+        this.detailBuildMs += elapsed;
+        this.pendingDecoration.push(chunk);
+      } else {
+        this.terrainBuilds++;
+        this.terrainBuildMs += elapsed;
+      }
+
       this.chunkMap.set(item.key, chunk);
       this.scene.add(chunk.group);
+
+      // 按时间限流：这一帧已经花超预算就不再开下一个，避免高速移动时连建数个区块。
+      if (performance.now() - frameStart >= budgetMs) break;
+    }
+
+    // 补内容（撒植被 + 放房屋）：本帧只做这一件事。
+    if (decorateNow) {
+      const chunk = this.pendingDecoration.shift()!;
+      // 可能已经被卸载，只有还挂在场景上的区块才补。
+      if (this.chunkMap.get(chunk.key) === chunk) {
+        const started = performance.now();
+        this.chunkBuilder.decorate(chunk);
+        const elapsed = performance.now() - started;
+        this.lastDecorateMs = elapsed;
+        this.decorateBuilds++;
+        this.decorateBuildMs += elapsed;
+        if (elapsed > this.maxBuildMs) this.maxBuildMs = elapsed;
+      }
     }
 
     for (const [key, chunk] of this.chunkMap) {
@@ -111,6 +209,7 @@ export class WorldStreamer {
       for (const key of keys) {
         if (builtRoads >= roadBudget) break;
         if (this.roadMap.has(key)) continue;
+        if (builtRoads > 0 && performance.now() - frameStart >= budgetMs) break;
 
         const road = this.roadBuilder.build(key);
         this.roadMap.set(key, road);
@@ -125,6 +224,8 @@ export class WorldStreamer {
         this.roadMap.delete(key);
       }
     }
+
+    this.frameBuildMs = performance.now() - frameStart;
   }
 
   /** 返回被树干 / 岩石推开后的水平位置。 */
@@ -162,9 +263,11 @@ export class WorldStreamer {
     for (const road of this.roadMap.values()) this.disposeRoad(road);
     this.chunkMap.clear();
     this.roadMap.clear();
+    this.pendingDecoration.length = 0;
   }
 
   private disposeChunk(chunk: ChunkView): void {
+    this.pendingDecoration = this.pendingDecoration.filter((pending) => pending !== chunk);
     this.scene.remove(chunk.group);
     chunk.group.traverse((object) => {
       if (object instanceof InstancedMesh) {

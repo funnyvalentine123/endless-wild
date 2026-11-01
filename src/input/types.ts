@@ -5,6 +5,8 @@ export type InputAction =
   | 'toggle-map'
   | 'toggle-sky-view'
   | 'toggle-save'
+  | 'toggle-bag'
+  | 'toggle-craft'
   | 'close-map'
   | 'speed-down'
   | 'speed-up';

@@ -1,5 +1,5 @@
 import { BufferAttribute, Color, Group, Mesh, PlaneGeometry } from 'three';
-import { CHUNK_SEGMENTS, CHUNK_SIZE } from '../../config/world';
+import { CHUNK_SEGMENTS, CHUNK_SEGMENTS_FAR, CHUNK_SIZE } from '../../config/world';
 import type { WorldMaterials } from '../WorldMaterials';
 import type { World } from '../World';
 import { sampleTerrainColor } from '../TerrainColoring';
@@ -28,18 +28,27 @@ export class ChunkMeshBuilder {
   private readonly houseCache = new Map<string, HousePlacement | null>();
 
   /**
-   * 构建一个区块。
-   *
-   * detailed=false 时只铺地形网格：外圈区块在雾里几乎看不出来，
-   * 先省掉撒点与房屋的构建开销，等玩家靠近后再升级为完整区块。
+   * 构建一个区块（同步）。需要分帧时请分别用 buildTerrain / decorate：
+   * 地形网格是所有区块都要付的成本，植被与房屋可以晚一两帧再补。
    */
   build(cx: number, cz: number, detailed = true): ChunkView {
+    const chunk = this.buildTerrain(cx, cz, detailed);
+    if (detailed) this.decorate(chunk);
+    return chunk;
+  }
+
+  /**
+   * 只铺地形网格：外圈区块在雾里几乎看不出来，不撒植被、不放房屋，
+   * 并且用更低的分段数（CHUNK_SEGMENTS_FAR），顶点采样只有近处的 40% 左右。
+   */
+  buildTerrain(cx: number, cz: number, detailed: boolean): ChunkView {
     const originX = cx * CHUNK_SIZE;
     const originZ = cz * CHUNK_SIZE;
     const key = `${cx},${cz}`;
     const group = new Group();
 
-    const geometry = new PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SEGMENTS, CHUNK_SEGMENTS);
+    const segments = detailed ? CHUNK_SEGMENTS : CHUNK_SEGMENTS_FAR;
+    const geometry = new PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, segments, segments);
     geometry.rotateX(-Math.PI / 2);
 
     const positions = geometry.getAttribute('position') as BufferAttribute;
@@ -79,11 +88,20 @@ export class ChunkMeshBuilder {
     terrain.position.set(originX, 0, originZ);
     group.add(terrain);
 
-    // 外圈：只有地形，不撒植被、不放房屋，也不产生碰撞体。
-    if (!detailed) {
-      return { key, cx, cz, group, colliders: [], detailed: false };
-    }
+    return {
+      key,
+      cx,
+      cz,
+      group,
+      colliders: [],
+      detailed: false,
+      needsDecoration: detailed,
+    };
+  }
 
+  /** 补全内容：撒植被、放房屋。detailed 请求的区块才需要调用，通常晚一帧。 */
+  decorate(chunk: ChunkView): void {
+    const { cx, cz, group } = chunk;
     const house = this.houseAt(cx, cz);
 
     // 把相邻区块的房屋空地也纳入排除，避免树从隔壁长进院子里。
@@ -125,15 +143,10 @@ export class ChunkMeshBuilder {
       scatter.colliders.push({ x: house.x, z: house.z, radius: built.site.houseRadius });
     }
 
-    return {
-      key,
-      cx,
-      cz,
-      group,
-      colliders: scatter.colliders,
-      house: site,
-      detailed: true,
-    };
+    chunk.colliders = scatter.colliders;
+    chunk.house = site;
+    chunk.detailed = true;
+    chunk.needsDecoration = false;
   }
 
   private geometryFor(kind: VegetationKind) {

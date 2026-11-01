@@ -40,6 +40,22 @@ body.touch #jumpBtn {
   display: block;
 }
 
+/* 未解锁时触屏控件变暗，避免玩家以为摇杆坏了。 */
+#joy.is-locked,
+#jumpBtn.is-locked {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+}
+
+#jumpBtn.is-locked::after {
+  content: '🔒';
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 body.touch #hint,
 body.touch #cross {
   display: none;

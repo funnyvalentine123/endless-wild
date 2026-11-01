@@ -4,8 +4,23 @@ import type { InputAction } from '../input/types';
 import { GameLoop } from '../core/GameLoop';
 import { requireElement } from '../core/dom';
 import { FAST_TIME_SCALE, NORMAL_TIME_SCALE } from '../config/daynight';
+import { GEM_DEFINITIONS, GEM_KINDS, type GemKind } from '../config/gems';
+import { SPEED_SCALE_MIN } from '../config/player';
+import {
+  CRAFT_FEATURE_ORDER,
+  FEATURES,
+  STARTER_GEMS,
+  type FeatureId,
+} from '../config/unlocks';
+import { Inventory } from '../inventory/Inventory';
+import { clamp } from '../math/scalar';
+import type { PlayerIntent } from '../player/Player';
+import { InventoryPanel } from '../ui/InventoryPanel';
+import { CraftPanel, type CraftActionResult, type CraftFeatureCard, type CraftFeatureDetail, type CraftMaterial } from '../ui/CraftPanel';
+import { UnlockStore } from '../unlock/UnlockStore';
+import { UnlockSystem } from '../unlock/UnlockSystem';
 import { DESERT } from '../config/desert';
-import { WATER_LEVEL } from '../config/world';
+import { CHUNK_STREAM_MS, CHUNK_STREAM_MS_BOOT, WATER_LEVEL } from '../config/world';
 import {
   formatWeatherLabel,
   type WeatherKind,
@@ -46,6 +61,15 @@ import { ChunkMeshBuilder } from '../world/streaming/ChunkMeshBuilder';
 import { RoadMeshBuilder } from '../world/streaming/RoadMeshBuilder';
 import { WorldStreamer } from '../world/streaming/WorldStreamer';
 
+/** 未解锁时点击按钮给出的提示文案。 */
+const LOCKED_HINT: Record<'time' | 'view' | 'save' | 'bag' | 'teleport', string> = {
+  time: '还没解锁「时间流逝」：到合成台 (C) 合成后可用',
+  view: '还没解锁「第三人称」：到合成台 (C) 合成后可用',
+  save: '还没解锁「存档面板」：到合成台 (C) 合成后可用',
+  bag: '还没解锁「背包」：到合成台 (C) 合成后可用',
+  teleport: '调试传送按钮：点合成台的「调试 · 全部解锁」后放行',
+};
+
 /**
  * 游戏顶层编排器：只负责依赖装配、主循环顺序和 UI 状态同步。
  * 具体的世界、渲染、输入、物理逻辑都在各自模块中。
@@ -60,6 +84,9 @@ export class Game {
   private readonly environment: SceneEnvironment;
   private readonly wildlife: WildlifeManager;
   private readonly village: VillageManager;
+  private readonly inventory: Inventory;
+  private readonly unlock: UnlockSystem;
+  private readonly unlockStore: UnlockStore;
   private readonly gems: GemManager;
   private readonly streamer: WorldStreamer;
   private readonly player: Player;
@@ -75,12 +102,17 @@ export class Game {
   private readonly skyView: SkyView;
   private readonly save: SaveService;
   private readonly savePanel: SavePanel;
+  private readonly bagPanel: InventoryPanel;
+  private readonly craftPanel: CraftPanel;
   private readonly startScreen: StartScreen;
   private readonly toolbar: Toolbar;
   private readonly speedControl: SpeedControl;
   private readonly weatherControl: WeatherControl;
   private readonly loop: GameLoop;
   private readonly canvas: HTMLCanvasElement;
+  /** 触屏控件：锁定态要跟着解锁进度变暗。 */
+  private readonly joystick: HTMLElement;
+  private readonly jumpButton: HTMLButtonElement;
 
   private started = false;
   private autoWalk = false;
@@ -94,6 +126,8 @@ export class Game {
   private uiWeatherKind: WeatherKind | null = null;
   private uiWeatherLevel: WeatherLevel | null = null;
   private uiWeatherAuto: boolean | null = null;
+  /** 宝石雷达刷新节流：宝石点位不需要每帧重算，0.25s 一次足够。 */
+  private radarTimer = 0;
 
   constructor() {
     // 有本地存档时把它的种子作为兜底：URL 与上次游玩的世界优先，避免旧存档把世界拉回去。
@@ -119,12 +153,21 @@ export class Game {
       this.world,
       this.materials.vegetation,
     );
+    // 背包先建好：宝石拾取要用它查“这颗是否已经收过”，存档也要从这里取扩展段。
+    this.inventory = new Inventory();
+    // 功能解锁：纯逻辑对象 + 独立 localStorage 槽位（换世界也不会丢进度）。
+    this.unlock = new UnlockSystem();
+    this.unlockStore = UnlockStore.local();
     // 红宝石要跟着真实动物移动，所以直接接WildlifeManager的位置查询。
     this.gems = new GemManager(
       this.viewport.scene,
       this.world,
       this.seed,
       () => this.wildlife.getSightings(),
+      {
+        isTaken: (key) => this.inventory.isTaken(key),
+        onCollect: (kind, key) => this.collectGem(kind, key),
+      },
     );
 
     const chunkBuilder = new ChunkMeshBuilder(
@@ -164,13 +207,34 @@ export class Game {
       },
       reloadToSeed: (seed) => this.reloadToSeed(seed),
     });
+    // 背包作为存档的扩展段：宝石数量与已收走的站点会一起写进存档。
+    this.save.registerSection({
+      key: 'inventory',
+      capture: () => this.inventory.toSave(),
+      restore: (value) => this.inventory.fromSave(value),
+    });
+    // 解锁进度先读独立槽位：它不依赖世界种子，换世界 / 世界存档损坏时也能保住已解锁的功能。
+    const storedUnlocks = this.unlockStore.load();
+    if (storedUnlocks) this.unlock.fromSave(storedUnlocks, this.inventory);
+    // 同一份进度也会写进完整存档的扩展段，随存档一起导出、导入。
+    // 恢复用合并语义：世界存档可能比独立槽位旧，不能把已经解锁的功能抹掉。
+    this.save.registerSection({
+      key: 'unlock',
+      capture: () => this.unlock.toSave(),
+      restore: (value) => this.unlock.mergeFromSave(value, this.inventory),
+    });
     // 启动续档：只有存档与当前种子一致时才回到保存点，换世界不会被旧存档干扰。
     this.restoredFromSave = this.save.restoreOnStart();
+    // 新手礼包必须在续档之后判断：旧存档里已经有宝石就不重复发放。
+    this.grantStarterGems();
+    this.persistUnlocks();
 
     this.desertFactor = this.world.desertAt(this.player.state.x, this.player.state.z);
     this.weather.setDesertFactor(this.desertFactor);
 
     this.hud = new Hud(this.world, this.seed);
+    // 启动续档在 HUD 创建之前完成，这里补一次背包数量显示。
+    this.hud.setGemCount(this.inventory.total);
     this.minimap = new Minimap(this.world);
     this.bigMap = new BigMap(this.world, {
       onOpenRequest: () => this.openMap(),
@@ -181,12 +245,14 @@ export class Game {
       onCloseRequest: () => this.closeSkyView(),
     });
 
+    this.joystick = requireElement('joy');
+    this.jumpButton = requireElement<HTMLButtonElement>('jumpBtn');
     this.input = new InputManager(
       canvas,
       {
-        joystick: requireElement('joy'),
+        joystick: this.joystick,
         knob: requireElement('joyK'),
-        jumpButton: requireElement<HTMLButtonElement>('jumpBtn'),
+        jumpButton: this.jumpButton,
       },
       this.handleInputAction,
     );
@@ -202,10 +268,12 @@ export class Game {
       onTeleportDesert: () => this.teleportToDesert(),
       onTeleportOasis: () => this.teleportToOasis(),
       onOpenSave: () => this.openSavePanel(),
+      onOpenBag: () => this.openBagPanel(),
+      onOpenCraft: () => this.toggleCraftPanel(),
       onNewWorld: () => this.loadNewWorld(),
     });
     this.speedControl = new SpeedControl({
-      onStep: (direction) => this.setSpeedScale(this.player.stepSpeedScale(direction)),
+      onStep: (direction) => this.changeSpeed(direction),
       onSet: (scale) => this.setSpeedScale(scale),
     });
     this.speedControl.setValue(this.player.speedScale);
@@ -218,9 +286,9 @@ export class Game {
     this.savePanel = new SavePanel(
       {
         save: () => this.save.saveLocal().message,
-        load: () => this.save.loadLocal().message,
+        load: () => this.runSaveAction(() => this.save.loadLocal()),
         export: () => this.exportSaveFile(),
-        import: (text) => this.save.importText(text).message,
+        import: (text) => this.runSaveAction(() => this.save.importText(text)),
         remove: () => {
           if (!window.confirm('删除本地存档？此操作无法撤销。')) return '已取消删除。';
           return this.save.removeLocal().message;
@@ -229,6 +297,30 @@ export class Game {
       },
       { onCloseRequest: () => this.closeSavePanel() },
     );
+    this.bagPanel = new InventoryPanel(
+      {
+        model: () => ({
+          entries: this.inventory.entries(),
+          total: this.inventory.total,
+        }),
+      },
+      { onCloseRequest: () => this.closeBagPanel() },
+    );
+    this.craftPanel = new CraftPanel(
+      {
+        features: () => this.craftFeatures(),
+        detail: (id) => this.craftDetail(id),
+        materials: () => this.craftMaterials(),
+        place: (id, index, kind) => this.craftPlace(id, index, kind),
+        remove: (id, index) => this.craftRemove(id, index),
+        clear: (id) => this.craftClear(id),
+        craft: (id) => this.craftExecute(id),
+        debugUnlock: () => this.debugUnlockAll(),
+      },
+      { onCloseRequest: () => this.closeCraftPanel() },
+    );
+    // 初始状态：除地图、视角与 F 自动前进外，其余功能全部锁定。
+    this.applyUnlocks();
 
     this.loop = new GameLoop((dt) => this.update(dt));
 
@@ -262,6 +354,8 @@ export class Game {
     this.bigMap.dispose();
     this.skyView.dispose();
     this.savePanel.dispose();
+    this.bagPanel.dispose();
+    this.craftPanel.dispose();
     this.startScreen.dispose();
     this.toolbar.dispose();
     this.speedControl.dispose();
@@ -290,7 +384,8 @@ export class Game {
 
     let speed = 0;
     if (this.started) {
-      speed = this.player.update(dt, this.input.getIntent(), this.autoWalk);
+      // 未解锁的功能在输入层就直接清零：走路 / 奔跑 / 跳跃都按解锁状态放行。
+      speed = this.player.update(dt, this.gateIntent(this.input.getIntent()), this.autoWalk);
     } else {
       this.player.state.yaw += dt * 0.05;
     }
@@ -299,7 +394,13 @@ export class Game {
     this.dayNight.update(dt, this.fastTime);
     // 昼夜快照当帧只算一次：宝石用它判断白天/夜晚，光照也复用同一份。
     const daylight = this.dayNight.snapshot;
-    this.streamer.update(state.x, state.z, state.yaw, this.started ? 2 : 4);
+    this.streamer.update(
+      state.x,
+      state.z,
+      state.yaw,
+      this.started ? 2 : 4,
+      this.started ? CHUNK_STREAM_MS : CHUNK_STREAM_MS_BOOT,
+    );
     this.village.update(dt, this.streamer.chunks);
     this.wildlife.update(dt, state.x, state.z);
     this.gems.update(dt, state, this.weather.snapshot, waterLevel, daylight.daylightFactor);
@@ -325,6 +426,12 @@ export class Game {
       this.dayNight.hour,
       formatWeatherLabel(this.weather.kind, this.weather.level),
     );
+    // 宝石雷达：节流刷新点位，小地图与大地图共用同一份数据。
+    this.radarTimer += dt;
+    if (this.radarTimer >= 0.25) {
+      this.radarTimer = 0;
+      this.refreshRadar();
+    }
     this.minimap.update(dt, state);
     this.bigMap.update(dt, state);
     // 天穹俯瞰必须在主视角渲染之前：它借用画布一角渲染后立即拷走。
@@ -340,6 +447,26 @@ export class Game {
     this.startScreen.hide();
     this.input.setActive(true);
     if (!this.input.isTouch) requestPointerLock(this.canvas);
+
+    // 开局提示：行走 / 跳跃 / 背包默认可用，其余能力都在合成台里等着合成。
+    this.hud.announce('基础能力已就绪：WASD 行走 · 空格跳跃 · B 背包 · 按 C 合成更多能力');
+  }
+
+  /** 尚未解锁「奔跑」时把 run 清零；行走 / 跳跃 / 背包是默认能力，不受影响。 */
+  private gateIntent(intent: PlayerIntent): PlayerIntent {
+    return {
+      forward: intent.forward,
+      strafe: intent.strafe,
+      run: this.unlock.isUnlocked('sprint') && intent.run,
+      jump: intent.jump,
+    };
+  }
+
+  /** 未解锁时提示去合成台；返回 true 表示这次操作应该被拦下。 */
+  private blockedByUnlock(id: FeatureId, label: string): boolean {
+    if (this.unlock.isUnlocked(id)) return false;
+    this.hud.announce(`「${label}」尚未解锁 · 按 C 打开合成台`);
+    return true;
   }
 
   private openMap(): void {
@@ -371,6 +498,7 @@ export class Game {
   /** N 键：打开 / 关闭天穹大视野。 */
   private toggleSkyView(): void {
     if (!this.started) return;
+    if (!this.skyView.isOpen && this.blockedByUnlock('sky', '天穹视角')) return;
     if (this.skyView.isOpen) this.closeSkyView();
     else this.openSkyView();
   }
@@ -396,16 +524,19 @@ export class Game {
     this.releaseOverlayInput();
   }
 
-  /** Esc：优先关掉正在打开的覆盖层（存档面板 → 天穹 → 大地图）。 */
+  /** Esc：优先关掉正在打开的覆盖层（合成台 → 背包 → 存档面板 → 天穹 → 大地图）。 */
   private closeOverlays(): void {
-    if (this.savePanel.isOpen) this.closeSavePanel();
+    if (this.craftPanel.isOpen) this.closeCraftPanel();
+    else if (this.bagPanel.isOpen) this.closeBagPanel();
+    else if (this.savePanel.isOpen) this.closeSavePanel();
     else if (this.skyView.isOpen) this.closeSkyView();
     else if (this.mapOpen) this.closeMap();
   }
 
-  /** 存档面板 / 大视野都关掉后，才把 Pointer Lock 与鼠标转向交还给游戏。 */
+  /** 存档面板 / 背包 / 合成台 / 大视野都关掉后，才把 Pointer Lock 与鼠标转向交还给游戏。 */
   private releaseOverlayInput(): void {
     if (this.mapOpen || this.skyView.isOpen || this.savePanel.isOpen) return;
+    if (this.bagPanel.isOpen || this.craftPanel.isOpen) return;
 
     this.input.setOverlayMode(false);
     if (!this.input.isTouch) requestPointerLock(this.canvas);
@@ -419,9 +550,12 @@ export class Game {
 
   private openSavePanel(): void {
     if (!this.started || this.savePanel.isOpen) return;
+    if (this.blockedByUnlock('save', '存档面板')) return;
 
     // 先让面板进入打开状态：随后关闭大视野时 releaseOverlayInput 不会重新锁定鼠标。
     this.savePanel.open();
+    if (this.craftPanel.isOpen) this.craftPanel.close();
+    if (this.bagPanel.isOpen) this.bagPanel.close();
     if (this.mapOpen) this.closeMap();
     if (this.skyView.isOpen) this.closeSkyView();
     this.input.setOverlayMode(true);
@@ -432,6 +566,58 @@ export class Game {
     if (!this.savePanel.isOpen) return;
 
     this.savePanel.close();
+    this.releaseOverlayInput();
+  }
+
+  /** B 键 / 底部「背包」按钮：打开或关闭背包面板。 */
+  private toggleBagPanel(): void {
+    if (this.bagPanel.isOpen) this.closeBagPanel();
+    else this.openBagPanel();
+  }
+
+  private openBagPanel(): void {
+    if (!this.started || this.bagPanel.isOpen) return;
+    if (this.blockedByUnlock('bag', '背包')) return;
+
+    // 与其他覆盖层同样的顺序：先打开自己，再关掉别人，避免释放鼠标时重新锁定。
+    this.bagPanel.open();
+    if (this.craftPanel.isOpen) this.craftPanel.close();
+    if (this.savePanel.isOpen) this.savePanel.close();
+    if (this.mapOpen) this.closeMap();
+    if (this.skyView.isOpen) this.closeSkyView();
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeBagPanel(): void {
+    if (!this.bagPanel.isOpen) return;
+
+    this.bagPanel.close();
+    this.releaseOverlayInput();
+  }
+
+  /** C 键 / 底部「合成台」按钮：打开或关闭合成台。 */
+  private toggleCraftPanel(): void {
+    if (this.craftPanel.isOpen) this.closeCraftPanel();
+    else this.openCraftPanel();
+  }
+
+  private openCraftPanel(): void {
+    if (!this.started || this.craftPanel.isOpen) return;
+
+    this.craftPanel.open();
+    if (this.bagPanel.isOpen) this.bagPanel.close();
+    if (this.savePanel.isOpen) this.savePanel.close();
+    if (this.mapOpen) this.closeMap();
+    if (this.skyView.isOpen) this.closeSkyView();
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeCraftPanel(): void {
+    if (!this.craftPanel.isOpen) return;
+
+    this.craftPanel.close();
     this.releaseOverlayInput();
   }
 
@@ -450,6 +636,33 @@ export class Game {
     };
   }
 
+  /** 宝石飞进身体后由 GemManager 回调：写进背包并同步 UI。 */
+  private collectGem(kind: GemKind, key: string): void {
+    this.inventory.add(kind, key);
+    this.hud.setGemCount(this.inventory.total);
+    // 提示只报本次收获 +1，不报累计数量（累计数量看 HUD / 背包格子即可）。
+    this.hud.announce(`收进背包：${GEM_DEFINITIONS[kind].label} +1`);
+    if (this.bagPanel.isOpen) this.bagPanel.refresh();
+  }
+
+  /** 载入 / 导入存档后同步背包与解锁相关的 UI（数量、站点、解锁状态都变了）。 */
+  private syncInventoryUi(): void {
+    this.hud.setGemCount(this.inventory.total);
+    // 新背包里已经收走过的固定站点，可能还留在当前场景里，要先清掉避免重复计数。
+    this.gems.dropTakenSites();
+    this.bagPanel.refresh();
+    // 存档里带着解锁进度：载入后重新应用锁定状态并同步独立槽位。
+    this.applyUnlocks();
+    this.persistUnlocks();
+  }
+
+  /** 存档操作统一走这里：执行后立刻刷新背包显示。 */
+  private runSaveAction(action: () => { message: string }): string {
+    const result = action();
+    this.syncInventoryUi();
+    return result.message;
+  }
+
   /** 载入另一个种子的存档：写回种子后整页重载，重载后自动续档。 */
   private reloadToSeed(seed: number): void {
     persistWorldSeed(seed);
@@ -462,18 +675,29 @@ export class Game {
   }
 
   private setFastTime(enabled: boolean): void {
+    if (enabled && this.blockedByUnlock('time', '时间流逝')) return;
     this.fastTime = enabled;
     this.toolbar.setTime(enabled);
   }
 
   private setThirdPerson(enabled: boolean): void {
+    if (enabled && this.blockedByUnlock('view', '第三人称')) return;
     this.thirdPerson = enabled;
     this.hero.setVisible(enabled);
     this.toolbar.setView(enabled);
   }
 
+  /** 调试传送：需要先点过合成台的「调试 · 全部解锁」。 */
+  private debugTransportAllowed(): boolean {
+    if (this.unlock.debugUnlocked) return true;
+    this.hud.announce('调试传送未放行 · 到合成台点「调试 · 全部解锁」');
+    return false;
+  }
+
   /** 调试：把玩家放到最近的沙漠边缘，并面朝沙漠。 */
   private teleportToDesert(): void {
+    if (!this.debugTransportAllowed()) return;
+
     const state = this.player.state;
     const target = findNearestDesertEdge(this.world, state.x, state.z);
     if (!target) return;
@@ -490,6 +714,8 @@ export class Game {
 
   /** 调试：把玩家放到最近的绿洲湖边，并面朝湖心。 */
   private teleportToOasis(): void {
+    if (!this.debugTransportAllowed()) return;
+
     const state = this.player.state;
     const target = findNearestOasisEdge(this.world, state.x, state.z);
     if (!target) return;
@@ -505,18 +731,30 @@ export class Game {
     this.cameraRig.reset();
   }
 
+  /** 速度倍率始终夹在已解锁的上限内：没解锁任何速度档位就只能保持 ×1。 */
   private setSpeedScale(scale: number): void {
-    this.player.setSpeedScale(scale);
+    this.player.setSpeedScale(clamp(scale, SPEED_SCALE_MIN, this.unlock.speedLimit()));
     this.speedControl.setValue(this.player.speedScale);
   }
 
+  /** 键盘 / 按钮调速：速度档位没解锁时给出提示，不改变倍率。 */
+  private changeSpeed(direction: -1 | 1): void {
+    if (!this.unlock.speedUnlocked()) {
+      this.hud.announce('速度档位尚未解锁 · 按 C 打开合成台');
+      return;
+    }
+    this.setSpeedScale(this.player.stepSpeedScale(direction));
+  }
+
   private setManualWeather(kind: WeatherKind, level: WeatherLevel): void {
+    if (this.blockedByUnlock('weather', '天气控制')) return;
     if (this.desertFactor >= DESERT.weatherUiBlock) return;
     this.weather.setManual(kind, level);
     this.syncWeatherUi(true);
   }
 
   private setWeatherAuto(enabled: boolean): void {
+    if (enabled && this.blockedByUnlock('weather', '天气控制')) return;
     if (enabled && this.desertFactor >= DESERT.weatherUiBlock) return;
     this.weather.setAuto(enabled);
     this.syncWeatherUi(true);
@@ -553,6 +791,206 @@ export class Game {
     window.location.search = buildSeedUrl(seed);
   }
 
+  /**
+   * 新手礼包：只在第一次进入、背包还是空的时候发放。
+   * 初始只能按 F 沿路自动前进，宝石大多长在离路较远的地方，
+   * 没有这几颗启动宝石就会陷入“不能走 → 收不到宝石 → 永远不能走”的死锁。
+   */
+  private grantStarterGems(): void {
+    if (this.unlock.starterGranted) return;
+
+    // 老存档 / 导入存档里已经有宝石：只补记标记，不重复发放。
+    if (this.inventory.total > 0) {
+      this.unlock.markStarterGranted();
+      return;
+    }
+
+    for (const kind of GEM_KINDS) {
+      const count = STARTER_GEMS[kind] ?? 0;
+      for (let index = 0; index < count; index++) this.inventory.add(kind);
+    }
+    this.unlock.markStarterGranted();
+  }
+
+  /** 解锁进度除了写进完整存档，还单独存一份，换世界或世界存档损坏时都不会丢。 */
+  private persistUnlocks(): void {
+    this.unlockStore.save(this.unlock.toSave());
+  }
+
+  /** 把解锁状态同步到所有受控的界面与玩家状态（初始调用一次，合成 / 调试解锁后再调用）。 */
+  private applyUnlocks(): void {
+    const unlocked = (id: FeatureId): boolean => this.unlock.isUnlocked(id);
+
+    this.toolbar.setLocked('time', !unlocked('time'), LOCKED_HINT.time);
+    this.toolbar.setLocked('view', !unlocked('view'), LOCKED_HINT.view);
+    this.toolbar.setLocked('save', !unlocked('save'), LOCKED_HINT.save);
+    // 行走 / 跳跃 / 背包是默认能力，不再上锁。
+    this.toolbar.setLocked('bag', false);
+    this.toolbar.setLocked('teleport', !this.unlock.debugUnlocked, LOCKED_HINT.teleport);
+
+    const limit = this.unlock.speedLimit();
+    this.speedControl.setLimits(SPEED_SCALE_MIN, limit, !this.unlock.speedUnlocked());
+    this.player.setSpeedScale(clamp(this.player.speedScale, SPEED_SCALE_MIN, limit));
+    this.speedControl.setValue(this.player.speedScale);
+
+    this.weatherControl.setLocked(!unlocked('weather'));
+
+    // 天穹摄像机未解锁时整个入口都不出现（缩略图与“天穹大视野”按钮一起隐藏）。
+    this.skyView.setUnlocked(unlocked('sky'));
+    this.joystick.classList.remove('is-locked');
+    this.jumpButton.classList.remove('is-locked');
+
+    this.refreshRadar();
+    this.craftPanel.refresh();
+  }
+
+  /** 宝石雷达：解锁后才能在地图上看到宝石光点，未解锁时清空点位。 */
+  private refreshRadar(): void {
+    const spots = this.unlock.isUnlocked('radar') ? this.gems.getSightings() : null;
+    this.minimap.setGems(spots);
+    this.bigMap.setGems(spots);
+  }
+
+  private craftFeatures(): CraftFeatureCard[] {
+    return CRAFT_FEATURE_ORDER.map((id) => {
+      const spec = FEATURES[id];
+      return {
+        id,
+        label: spec.label,
+        status: this.unlock.status(id),
+        filled: this.unlock.filledCount(id),
+        total: spec.total,
+      };
+    });
+  }
+
+  private craftDetail(id: FeatureId): CraftFeatureDetail {
+    const spec = FEATURES[id];
+    const status = this.unlock.status(id);
+    const draft = this.unlock.draft(id);
+    const completed = status === 'completed';
+
+    const cells = spec.cells.map((cell, index) => ({
+      need: cell.kind,
+      // 合成完成后草稿已清空，但图纸本身继续留在槽位里显示完成态。
+      gem: completed ? cell.kind : draft[index],
+      row: cell.row,
+      col: cell.col,
+    }));
+
+    const needs = spec.needs.map((need) => {
+      let placed = 0;
+      for (const gem of draft) if (gem === need.kind) placed += 1;
+
+      return {
+        kind: need.kind,
+        need: need.count,
+        placed: completed ? need.count : placed,
+        // 其他功能的草稿先预留，这里显示当前功能还能用的数量。
+        have: this.unlock.available(need.kind, this.inventory, id),
+      };
+    });
+
+    return {
+      id,
+      label: spec.label,
+      summary: spec.summary,
+      cols: spec.cols,
+      status,
+      cells,
+      needs,
+      total: spec.total,
+      filled: this.unlock.filledCount(id),
+    };
+  }
+
+  private craftMaterials(): CraftMaterial[] {
+    return this.inventory
+      .entries()
+      .filter((entry) => entry.count > 0)
+      .map((entry) => ({
+        kind: entry.kind,
+        available: this.unlock.available(entry.kind, this.inventory),
+        total: entry.count,
+      }));
+  }
+
+  private craftPlace(id: FeatureId, index: number, kind: GemKind): CraftActionResult {
+    const outcome = this.unlock.placeGem(id, index, kind, this.inventory);
+    const label = GEM_DEFINITIONS[kind].label;
+
+    if (outcome === 'ok') {
+      this.afterCraftChange();
+      return { ok: true, message: `已放入 ${label}。` };
+    }
+    if (outcome === 'no-stock') {
+      return { ok: false, message: `${label} 已经全部摆在槽位里了。` };
+    }
+    if (outcome === 'occupied') {
+      return { ok: false, message: '这个槽位已经有宝石了，先点一下取回。' };
+    }
+    if (outcome === 'void-cell') {
+      return { ok: false, message: '这一格不在图纸形状内。' };
+    }
+    if (outcome === 'unlocked') {
+      return { ok: false, message: '这个功能已经解锁，槽位不再接受新的合成。' };
+    }
+    return { ok: false, message: '无法放入这颗宝石。' };
+  }
+
+  private craftRemove(id: FeatureId, index: number): CraftActionResult {
+    if (!this.unlock.removeGem(id, index)) {
+      return { ok: false, message: '这个槽位是空的。' };
+    }
+    this.afterCraftChange();
+    return { ok: true, message: '已取回一颗宝石。' };
+  }
+
+  private craftClear(id: FeatureId): CraftActionResult {
+    if (!this.unlock.clearDraft(id)) {
+      return { ok: false, message: '槽位本来就是空的。' };
+    }
+    this.afterCraftChange();
+    return { ok: true, message: '已清空当前图纸的槽位。' };
+  }
+
+  private craftExecute(id: FeatureId): CraftActionResult {
+    const result = this.unlock.craft(id, this.inventory);
+    if (result.outcome !== 'ok' || !result.feature) {
+      return { ok: false, message: result.message };
+    }
+
+    this.hud.setGemCount(this.inventory.total);
+    this.hud.announce(`合成成功：${result.feature.label} 已永久解锁`);
+    this.applyUnlocks();
+    this.persistUnlocks();
+    // 静默写一份完整存档：新消耗的宝石数量与解锁状态一起落盘。
+    this.save.saveLocal();
+
+    return { ok: true, message: result.message };
+  }
+
+  /** 调试：不消耗宝石，一键启用所有被锁定的功能（同时放行调试传送按钮）。 */
+  private debugUnlockAll(): CraftActionResult {
+    const added = this.unlock.unlockAll();
+    this.applyUnlocks();
+    this.persistUnlocks();
+    this.hud.announce('调试：所有功能已启用');
+
+    return {
+      ok: true,
+      message:
+        added.length > 0
+          ? `调试：已启用 ${added.length} 项功能，并放行调试传送按钮。`
+          : '所有功能已处于启用状态，调试传送按钮已放行。',
+    };
+  }
+
+  private afterCraftChange(): void {
+    this.persistUnlocks();
+    if (this.bagPanel.isOpen) this.bagPanel.refresh();
+  }
+
   private readonly handleInputAction = (action: InputAction): void => {
     if (action === 'toggle-auto') this.setAutoWalk(!this.autoWalk);
     else if (action === 'toggle-time') this.setFastTime(!this.fastTime);
@@ -560,9 +998,11 @@ export class Game {
     else if (action === 'toggle-map') this.toggleMap();
     else if (action === 'toggle-sky-view') this.toggleSkyView();
     else if (action === 'toggle-save') this.toggleSavePanel();
+    else if (action === 'toggle-bag') this.toggleBagPanel();
+    else if (action === 'toggle-craft') this.toggleCraftPanel();
     else if (action === 'close-map') this.closeOverlays();
-    else if (action === 'speed-down') this.setSpeedScale(this.player.stepSpeedScale(-1));
-    else if (action === 'speed-up') this.setSpeedScale(this.player.stepSpeedScale(1));
+    else if (action === 'speed-down') this.changeSpeed(-1);
+    else if (action === 'speed-up') this.changeSpeed(1);
   };
 
   private installDebugApi(): void {
@@ -594,15 +1034,25 @@ export class Game {
         textures: this.viewport.renderer.info.memory.textures,
         chunks: this.streamer.chunks.size,
       }),
+      streamStats: () => this.streamer.stats(),
       openSavePanel: () => this.openSavePanel(),
       closeSavePanel: () => this.closeSavePanel(),
       isSavePanelOpen: () => this.savePanel.isOpen,
       didRestoreSave: () => this.restoredFromSave,
       saveGame: () => this.save.saveLocal(),
-      loadGame: () => this.save.loadLocal(),
+      // 调试接口也要和面板走同一条路径：载入 / 导入后立刻把背包数量同步到 HUD 与背包面板。
+      loadGame: () => {
+        const result = this.save.loadLocal();
+        this.syncInventoryUi();
+        return result;
+      },
       getLocalSave: () => this.save.readLocal(),
       exportSaveText: () => this.save.createExport(),
-      importSaveText: (text: string) => this.save.importText(text),
+      importSaveText: (text: string) => {
+        const result = this.save.importText(text);
+        this.syncInventoryUi();
+        return result;
+      },
       getHour: () => this.dayNight.hour,
       setHour: (hour: number) => this.dayNight.setHour(hour),
       getWeather: () => ({
@@ -624,6 +1074,26 @@ export class Game {
       gemSightings: () => this.gems.getSightings(),
       gemSitesNear: (chunkRadius?: number) =>
         this.gems.sitesNear(this.player.state.x, this.player.state.z, chunkRadius),
+      inventory: () => this.inventory.toSave(),
+      bagEntries: () => this.inventory.entries().filter((entry) => entry.count > 0),
+      openBagPanel: () => this.openBagPanel(),
+      closeBagPanel: () => this.closeBagPanel(),
+      isBagPanelOpen: () => this.bagPanel.isOpen,
+      openCraftPanel: () => this.openCraftPanel(),
+      closeCraftPanel: () => this.closeCraftPanel(),
+      isCraftPanelOpen: () => this.craftPanel.isOpen,
+      unlockState: () => ({
+        unlocked: this.unlock.unlocked(),
+        completed: this.unlock.completed(),
+        speedLimit: this.unlock.speedLimit(),
+        starterGranted: this.unlock.starterGranted,
+        debug: this.unlock.debugUnlocked,
+        drafts: this.unlock.toSave()?.drafts ?? {},
+      }),
+      unlockAll: () => {
+        this.debugUnlockAll();
+        return this.unlock.unlocked();
+      },
       villageStats: () => this.village.getStats(),
     };
   }

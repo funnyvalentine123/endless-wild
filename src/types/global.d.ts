@@ -2,6 +2,8 @@ import type { PerspectiveCamera, Scene } from 'three';
 import type { GemKind } from '../config/gems';
 import type { GemSighting } from '../gems/GemManager';
 import type { GemSite } from '../gems/sites';
+import type { InventoryData } from '../inventory/Inventory';
+import type { FeatureId } from '../config/unlocks';
 import type { WeatherKind, WeatherLevel } from '../config/weather';
 import type { PlayerState } from '../player/Player';
 import type { SaveResult } from '../save/SaveService';
@@ -43,6 +45,29 @@ export interface WildDebugApi {
     geometries: number;
     textures: number;
     chunks: number;
+  };
+  /** 区块 / 道路构建统计：定位“远处生成新区块时掉帧”。 */
+  streamStats(): {
+    chunks: number;
+    roads: number;
+    builds: number;
+    /** 最近一个区块的构建耗时（毫秒）。 */
+    lastBuildMs: number;
+    /** 单个区块的最长构建耗时（毫秒）。 */
+    maxBuildMs: number;
+    /** 上一帧流式加载总共花掉的时间（毫秒）。 */
+    frameBuildMs: number;
+    lastFrameBuilds: number;
+    /** 外圈纯地形区块（16 分段）的平均构建耗时。 */
+    avgTerrainMs: number;
+    /** 近处区块只铺地形（32 分段）的平均耗时，植被随后分帧补。 */
+    avgDetailMs: number;
+    /** 补植被 / 房屋的平均耗时。 */
+    avgDecorateMs: number;
+    /** 上一次补内容花的时间。 */
+    lastDecorateMs: number;
+    /** 还在排队等补内容的区块数量。 */
+    pendingDecoration: number;
   };
   getHour(): number;
   setHour(hour: number): void;
@@ -86,6 +111,28 @@ export interface WildDebugApi {
   gemSightings(): GemSighting[];
   /** 玩家附近由地形规则决定的宝石站点（调试找点用，不代表已经生成）。 */
   gemSitesNear(chunkRadius?: number): GemSite[];
+  /** 背包存档段：宝石数量与已经收走的固定站点；空背包返回 undefined。 */
+  inventory(): InventoryData | undefined;
+  /** 背包里已有的宝石（数量为 0 的品类不列出）。 */
+  bagEntries(): Array<{ kind: GemKind; count: number }>;
+  openBagPanel(): void;
+  closeBagPanel(): void;
+  isBagPanelOpen(): boolean;
+  /** 合成台：打开 / 关闭面板（等同按 C）。 */
+  openCraftPanel(): void;
+  closeCraftPanel(): void;
+  isCraftPanelOpen(): boolean;
+  /** 当前解锁进度快照（调试用）。 */
+  unlockState(): {
+    unlocked: FeatureId[];
+    completed: FeatureId[];
+    speedLimit: number;
+    starterGranted: boolean;
+    debug: boolean;
+    drafts: Record<string, Array<string | null>>;
+  };
+  /** 调试：一键启用所有被锁定的功能（不消耗宝石）。 */
+  unlockAll(): FeatureId[];
   villageStats(): { houses: number; villagers: number; smokeEmitters: number };
 }
 

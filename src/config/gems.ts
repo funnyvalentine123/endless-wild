@@ -35,6 +35,8 @@ export interface GemDefinition {
   readonly color: number;
   /** 光晕 / 光柱颜色（黑宝石用暗紫色，否则在天空里完全看不见）。 */
   readonly glow: number;
+  /** 光柱单独的颜色；不填时沿用 `glow`（黑宝石的光柱要纯黑）。 */
+  readonly pillarColor?: number;
   /** 同时存在的上限，避免低概率系统堆出太多 draw call。 */
   readonly maxActive: number;
   readonly rule: string;
@@ -56,8 +58,9 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     shape: 'icosahedron',
     color: 0x2f7bff,
     glow: 0x3d86ff,
-    maxActive: 1,
-    rule: '湖泊中央的水面之上',
+    /** 大湖能横跨多个区块，同一片开阔水面上偶尔会同时悬着两颗。 */
+    maxActive: 3,
+    rule: '开阔的大水面中心（离岸 24m 内全是水），每个这样的区块 30%',
   },
   yellow: {
     kind: 'yellow',
@@ -65,8 +68,8 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     shape: 'tetrahedron',
     color: 0xffd23f,
     glow: 0xffd84f,
-    maxActive: 2,
-    rule: '沙漠风蚀岩柱附近',
+    maxActive: 3,
+    rule: '风蚀岩柱旁大概率出现；沙漠其他地方也有低概率',
   },
   green: {
     kind: 'green',
@@ -74,8 +77,8 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     shape: 'dodecahedron',
     color: 0x37e06a,
     glow: 0x45f07a,
-    maxActive: 2,
-    rule: '绿洲湖岸外的小树林',
+    maxActive: 3,
+    rule: '绿洲湖岸外的小树林高概率；普通草地上也有低概率',
   },
   purple: {
     kind: 'purple',
@@ -101,9 +104,11 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     shape: 'crystal',
     color: 0x2a2438,
     glow: 0x927cff,
-    /** 雪山在 320m 扫描范围内最多同时覆盖 4 座，留一点余量保证每座山都能出现。 */
-    maxActive: 5,
-    rule: '雪山雪线以上的峰顶，有积雪就必定出现',
+    /** 光柱用纯黑，在白色雪地和天空里是一道墨色烟柱。 */
+    pillarColor: 0x000000,
+    /** 一个山头最多一颗，320m 内同时出现两三座雪山即可，上限保守一些。 */
+    maxActive: 4,
+    rule: '每座雪山（3×3 区块内的最高峰）有 1/2 概率出现，一座山最多一颗',
   },
   glow: {
     kind: 'glow',
@@ -155,6 +160,25 @@ export const GEM_VISUALS = {
   glowPillarScroll: 0.03,
 } as const;
 
+/**
+ * 拾取：走到宝石旁边就会把它收进背包，宝石先“飞进身体”再消失。
+ * 判定用玩家胸口高度（主角身高中心 0.93m）对宝石中心，所以站在宝石旁就能碰到。
+ */
+export const GEM_COLLECT = {
+  /** 水平距离：宝石直径 0.92m，贴到身边才算碰到。 */
+  radius: 1.4,
+  /** 宝石中心与胸口的高度差上限；跳到空中时不会隔空把宝石吸走。 */
+  verticalTolerance: 1.3,
+  /** “飞进身体”的动画时长（秒）。 */
+  duration: 0.6,
+  /** 动画结束时宝石缩到原来的比例，看起来是被吸进去而不是穿模。 */
+  endScale: 0.18,
+  /** 飞行途中向上拱起的高度（米）。 */
+  arc: 0.45,
+  /** 收进身体时宝石自转加速到多少（弧度/秒）。 */
+  spinSpeed: 10,
+} as const;
+
 /** 扫描与回收：只在玩家附近生成，走远后回收，回来可以重新生成。 */
 export const GEM_SPAWN = {
   chunkRadius: 5,
@@ -174,33 +198,69 @@ export const GEM_RULES = {
     maxDesert: 0.2,
   },
   black: {
-    /** 有积雪的雪山（峰顶高于雪线）必定长出黑宝石，不再掷概率。 */
-    chance: 1,
-    /** 雪线：地形着色从 40m 起泛白，峰顶到这个高度才算“白色的雪山区”。 */
+    /** 每个山头 1/2 概率长出黑宝石（同一座山结果固定，进出山区不会变）。 */
+    chance: 0.5,
+    /** 雪线：地形着色从 height + detail * 4 = 40 起泛白，区块最高点达到这里就算“白色覆盖区”。 */
     minHeight: 40,
     maxDesert: 0.35,
-    /** 山格：一格最多算一座山，格内最高点即峰顶。 */
-    cellSize: 600,
-    /** 格内采样分辨率：7×7 个点（约 86m 一个），足够盖住一座山的峰顶。 */
-    samples: 7,
+    /** 判定山头时互相比较的区块半径：1 → 3×3 个区块内最高的一峰才算一座山。 */
+    summitRadius: 1,
+    /** 区块内粗采样：5×5（约 13m 一个点），先花 25 次高度采样把够不到雪线的区块排除。 */
+    samples: 5,
+    /** 粗筛余量：区块最高点低于 雪线 - 5m 时不再细化，避免为普通丘陵白采样。 */
+    coarseSlack: 5,
+    /** 山爬细化轮数：6.4m → 3.2m → 1.6m，落点误差约 1m。 */
+    refineRounds: 3,
   },
   blue: {
-    /** 每个含湖区块的概率；还需要找到四周都是水的湖心点。 */
-    chance: 0.02,
-    minDepth: 0.8,
-    ringRadius: 18,
+    /**
+     * 每个“有大片开阔水面”的水面格的出现概率。
+     * 只要求水面开阔，不再限定湖泊 biome 或湖心深度，因此大湖、宽河湾都会命中。
+     */
+    chance: 0.4,
+    /** 落点至少要比水位低这么多，浅滩 / 河滩上不算“水面中心”。 */
+    minDepth: 0.4,
+    /**
+     * 开阔半径：以落点为圆心，8 个方向上 24m 处都还必须是水，
+     * 也就是一片宽度至少约 48m 的连续水面（窄沟、细河与岸边都被排除）。
+     */
+    minOpenRadius: 24,
+    /**
+     * 水面格：以 96m 方格为单位，每格最多一颗，相邻两格的宝石至少隔开 48m，
+     * 不会出现两颗蓝宝石挤在同一片湖心的观感问题。
+     */
+    cellSize: 96,
+    /** 格内候选点：以格心为中心的 3×3，步长 24m，全部落在格子的中央区。 */
+    cellSamples: 3,
+    cellSpacing: 24,
+    /** 依深度从深到浅最多验算几个候选点。 */
+    candidates: 2,
   },
   green: {
-    /** 每个绿洲的概率。 */
-    chance: 0.3,
+    /** 绿洲：每个绿洲（中心所在区块）高概率出现。 */
+    oasisChance: 0.85,
+    /** 普通草地：每个草地区块低概率出现，绿宝石因此不必只在绿洲找。 */
+    meadowChance: 0.005,
+    /** 草地取点尝试次数。 */
+    meadowAttempts: 6,
     /** 树林带：湖岸线以外、绿洲地形渐变区以内。 */
     minWaterDistance: 40,
     maxHeight: 4.5,
+    /** 普通草地距离沙漠的最大因子，太靠近沙漠的旱地不算绿地。 */
+    maxDesert: 0.2,
   },
   yellow: {
-    /** 每根风蚀岩柱附近出现宝石的概率。 */
-    chance: 0.35,
+    /** 每根风蚀岩柱附近出现宝石的概率（大概率）。 */
+    hoodooChance: 0.7,
     offset: 3.6,
+    /** 沙漠里远离岩柱的普通沙地：每个沙漠区块低概率出现。 */
+    desertChance: 0.006,
+    /** 沙漠取点尝试次数。 */
+    desertAttempts: 6,
+    /** 沙漠生境门槛：沙漠核心附近才可能生成（绿洲被 habitatDesertAt 扣掉）。 */
+    minDesert: 0.6,
+    /** 沙漠落点与所有岩柱的最小间距，避免和岩柱旁那颗挤在一起。 */
+    hoodooClearance: 6,
   },
 } as const;
 

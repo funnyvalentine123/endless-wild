@@ -22,6 +22,8 @@ export interface ChunkView {
   house?: HouseSite;
   /** 是否已经补全植被、房屋等内容；外圈只有地形的区块为 false。 */
   detailed: boolean;
+  /** 已经排进“补全植被”的队列，避免同一区块被重复安排。 */
+  needsDecoration?: boolean;
 }
 
 export interface RoadView {

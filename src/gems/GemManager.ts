@@ -24,6 +24,7 @@ import {
   type Texture,
 } from 'three';
 import {
+  GEM_COLLECT,
   GEM_DEFINITIONS,
   GEM_DYNAMIC,
   GEM_KINDS,
@@ -56,12 +57,21 @@ export interface GemSighting {
   attached?: string;
 }
 
+/** 由 Game 注入的拾取钩子：查“这颗是否已经收过”、通知“收到了”。 */
+export interface GemManagerHooks {
+  /** 固定宝石站点已经收走过就不再生成。 */
+  isTaken?(key: string): boolean;
+  /** 宝石飞进身体后回调，由 Game 写进背包。 */
+  onCollect?(kind: GemKind, key: string): void;
+}
+
 interface GemEntry {
   readonly key: string;
   readonly kind: GemKind;
   readonly group: Group;
   readonly gem: Mesh;
   readonly halo: Sprite;
+  readonly pillar: Mesh;
   x: number;
   z: number;
   /** 地面或水面高度，光柱从这里起。 */
@@ -70,6 +80,12 @@ interface GemEntry {
   readonly phase: number;
   /** 红宝石附着的动物种类。 */
   animalKind?: string;
+  /** 拾取动画已经播放的时间（秒）；undefined 表示还没被碰到。 */
+  collectTime?: number;
+  /** 拾取动画的出发点（世界坐标），每帧朝玩家胸口插值。 */
+  startX?: number;
+  startY?: number;
+  startZ?: number;
 }
 
 const SPECIES_OF_RED = GEM_DYNAMIC.red.animals as readonly string[];
@@ -361,6 +377,8 @@ export class GemManager {
     private readonly world: World,
     private readonly seed: number,
     private readonly sightings: () => WildlifeSighting[],
+    /** 拾取钩子：背包查询与收集回调，默认不做任何事（方便单独调试宝石系统）。 */
+    private readonly hooks: GemManagerHooks = {},
     private readonly random: RandomSource = Math.random,
   ) {
     this.root.name = 'gems';
@@ -446,7 +464,8 @@ export class GemManager {
         new MeshBasicMaterial({
           map: this.pillarTexture,
           // 普通透明混合而不是加色混合：近看不会把颜色冲成一片白。
-          color: definition.glow,
+          // 黑宝石的光柱单独用黑色，其余宝石沿用光晕色。
+          color: definition.pillarColor ?? definition.glow,
           transparent: true,
           opacity: GEM_VISUALS.pillarOpacity,
           depthWrite: false,
@@ -483,11 +502,14 @@ export class GemManager {
     }
 
     for (const entry of this.entries.values()) {
+      // 正在飞进身体的宝石由 updateCollect 接管位置与缩放。
+      if (entry.collectTime !== undefined) continue;
       entry.gem.rotation.y += dt * GEM_VISUALS.spinSpeed;
       const pulse = 1 + Math.sin(this.time * 2.1 + entry.phase) * 0.04;
       entry.halo.scale.setScalar(GEM_VISUALS.haloScale * pulse);
     }
 
+    this.updateCollect(dt, state);
     this.updateGlowEffects(dt);
   }
 
@@ -526,6 +548,23 @@ export class GemManager {
       });
     }
     return spots;
+  }
+
+  /**
+   * 载入 / 导入存档后调用：把“存档里已经收走过、却还留在场景里”的固定宝石清掉。
+   * 否则切到另一份背包时，同一颗宝石会先被看见、再被收一次，数量就会多算。
+   */
+  dropTakenSites(): void {
+    const isTaken = this.hooks.isTaken;
+    if (!isTaken) return;
+
+    const stale: GemEntry[] = [];
+    for (const entry of this.entries.values()) {
+      // 正在飞进身体的宝石交给 updateCollect 收尾。
+      if (entry.collectTime !== undefined) continue;
+      if (isTaken(entry.key)) stale.push(entry);
+    }
+    for (const entry of stale) this.removeEntry(entry);
   }
 
   dispose(): void {
@@ -585,6 +624,8 @@ export class GemManager {
     // 离开太远的固定宝石直接回收；红宝石由跟随逻辑处理。
     for (const entry of this.entries.values()) {
       if (entry.kind === 'red') continue;
+      // 正在飞进身体的宝石不要中途回收，等动画播完再收进背包。
+      if (entry.collectTime !== undefined) continue;
       const dx = entry.x - playerX;
       const dz = entry.z - playerZ;
       if (dx * dx + dz * dz > GEM_SPAWN.despawnRadius ** 2) this.removeEntry(entry);
@@ -593,6 +634,8 @@ export class GemManager {
 
   private spawnSite(site: GemSite, waterLevel: number): void {
     if (this.entries.has(site.key)) return;
+    // 背包里已经收走过这颗，回到同一处也不会再长出来。
+    if (this.hooks.isTaken?.(site.key)) return;
     const limit = GEM_DEFINITIONS[site.kind].maxActive;
     if (this.countKind(site.kind) >= limit) return;
 
@@ -602,6 +645,8 @@ export class GemManager {
 
   private updateRed(dt: number, playerX: number, playerZ: number): void {
     const red = this.findKind('red');
+    // 已被碰到、正在飞进身体的宝石：停止跟随动物，交给拾取动画。
+    if (red && red.collectTime !== undefined) return;
     if (!red) {
       this.redTimer -= dt;
       if (this.redTimer > 0) return;
@@ -693,7 +738,7 @@ export class GemManager {
   ): void {
     if (weather.precipitation < GEM_DYNAMIC.purple.minPrecipitation) {
       for (const entry of this.entries.values()) {
-        if (entry.kind === 'purple') this.removeEntry(entry);
+        if (entry.kind === 'purple' && entry.collectTime === undefined) this.removeEntry(entry);
       }
       return;
     }
@@ -725,7 +770,7 @@ export class GemManager {
   ): void {
     if (daylight >= GEM_DYNAMIC.glow.maxDaylight) {
       for (const entry of this.entries.values()) {
-        if (entry.kind === 'glow') this.removeEntry(entry);
+        if (entry.kind === 'glow' && entry.collectTime === undefined) this.removeEntry(entry);
       }
       return;
     }
@@ -753,6 +798,66 @@ export class GemManager {
     if (halo) halo.rotation += dt * GEM_VISUALS.glowHaloSpin;
     this.rainbowPillarTexture.offset.x =
       (this.rainbowPillarTexture.offset.x + dt * GEM_VISUALS.glowPillarScroll) % 1;
+  }
+
+  /**
+   * 拾取：玩家贴到宝石（水平 1.4m、胸口高度对齐）就开始“飞进身体”的动画。
+   * 光柱立刻收掉，宝石缩小、加速自转并沿一条小弧线飞向玩家胸口，播完就交给背包。
+   */
+  private updateCollect(dt: number, state: PlayerState): void {
+    const chestY = state.y + GEM_VISUALS.centerHeight;
+    const collected: GemEntry[] = [];
+
+    for (const entry of this.entries.values()) {
+      if (entry.collectTime === undefined) {
+        if (!this.touchesPlayer(entry, state, chestY)) continue;
+        entry.collectTime = 0;
+        entry.startX = entry.group.position.x;
+        entry.startY = entry.group.position.y;
+        entry.startZ = entry.group.position.z;
+        // 光柱是宝石里最大的一块，收进身体时立即收掉，否则会整根柱子缩进胸口。
+        entry.pillar.visible = false;
+      }
+
+      const elapsed = (entry.collectTime ?? 0) + dt;
+      entry.collectTime = elapsed;
+      const progress = Math.min(1, elapsed / GEM_COLLECT.duration);
+      // smoothstep：起步慢、中途快、贴近身体时再放慢，看起来像被吸进去。
+      const eased = progress * progress * (3 - 2 * progress);
+      const scale = 1 - (1 - GEM_COLLECT.endScale) * eased;
+      entry.group.scale.setScalar(scale);
+
+      const startX = entry.startX ?? entry.x;
+      const startY = entry.startY ?? entry.baseY;
+      const startZ = entry.startZ ?? entry.z;
+      // 宝石网格在组内抬高 centerHeight；缩放后减掉这一截，中心才会正好落在胸口。
+      const targetY = chestY - GEM_VISUALS.centerHeight * scale;
+      entry.group.position.set(
+        startX + (state.x - startX) * eased,
+        startY + (targetY - startY) * eased + Math.sin(Math.PI * eased) * GEM_COLLECT.arc,
+        startZ + (state.z - startZ) * eased,
+      );
+
+      entry.gem.rotation.y += dt * GEM_COLLECT.spinSpeed;
+      entry.halo.scale.setScalar(GEM_VISUALS.haloScale * (1 - 0.85 * eased));
+
+      if (progress >= 1) collected.push(entry);
+    }
+
+    for (const entry of collected) {
+      this.removeEntry(entry);
+      this.hooks.onCollect?.(entry.kind, entry.key);
+    }
+  }
+
+  /** 玩家是否已经贴到这颗宝石：水平距离 + 胸口与宝石中心的高度差都在阈值内。 */
+  private touchesPlayer(entry: GemEntry, state: PlayerState, chestY: number): boolean {
+    const dx = entry.x - state.x;
+    const dz = entry.z - state.z;
+    if (dx * dx + dz * dz > GEM_COLLECT.radius ** 2) return false;
+
+    const gemY = entry.baseY + GEM_VISUALS.centerHeight;
+    return Math.abs(gemY - chestY) <= GEM_COLLECT.verticalTolerance;
   }
 
   /**
@@ -798,6 +903,8 @@ export class GemManager {
     baseY: number,
   ): GemEntry {
     const group = new Group();
+    // 用站点钥匙命名，控制台里可以直接找到某颗宝石。
+    group.name = key;
     group.position.set(x, baseY, z);
 
     const gem = new Mesh(this.gemGeometries.get(kind)!, this.gemMaterials.get(kind)!);
@@ -819,6 +926,7 @@ export class GemManager {
       group,
       gem,
       halo,
+      pillar,
       x,
       z,
       baseY,
@@ -828,9 +936,10 @@ export class GemManager {
     return entry;
   }
 
+  /** 水位变化后重算落点；正在被收走的宝石由拾取动画接管位置。 */
   private refreshSurfaces(waterLevel: number): void {
     for (const entry of this.entries.values()) {
-      if (entry.kind === 'red') continue;
+      if (entry.kind === 'red' || entry.collectTime !== undefined) continue;
       entry.baseY = this.surfaceY(entry.x, entry.z, waterLevel);
       entry.group.position.y = entry.baseY;
     }

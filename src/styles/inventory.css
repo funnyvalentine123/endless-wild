@@ -1,0 +1,129 @@
+/* 背包面板：沿用存档面板的遮罩与卡片，内容换成 4×6 的收纳格子。 */
+.bag-list {
+  --bag-columns: 6;
+  display: grid;
+  grid-template-columns: repeat(var(--bag-columns), minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px;
+}
+
+.bag-list[hidden],
+.bag-empty[hidden] {
+  display: none;
+}
+
+/* 空格子：虚线边 + 内阴影，没东西时也占着位置。 */
+.bag-slot {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: radial-gradient(
+    120% 120% at 50% 0%,
+    rgba(255, 255, 255, 0.05),
+    rgba(0, 0, 0, 0.18) 72%
+  );
+}
+
+/* 有宝石的格子：实线边 + 稍亮的底色，一眼能看出这格被占用了。 */
+.bag-slot.is-filled {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: radial-gradient(
+    120% 120% at 50% 8%,
+    rgba(255, 255, 255, 0.12),
+    rgba(0, 0, 0, 0.24) 76%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 宝石图标：形状用 clip-path，颜色由行内 CSS 变量给出（亮面 / 本色 / 暗面）。 */
+.bag-gem {
+  width: 60%;
+  height: 60%;
+  background: linear-gradient(
+    150deg,
+    var(--gem-light) 0%,
+    var(--gem-color) 46%,
+    var(--gem-dark) 100%
+  );
+  /* 同色外发光，让图标像在发光。 */
+  filter: drop-shadow(0 0 7px var(--gem-glow));
+}
+
+.bag-gem--octahedron {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+.bag-gem--icosahedron {
+  clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+}
+
+.bag-gem--tetrahedron {
+  clip-path: polygon(50% 2%, 100% 98%, 0% 98%);
+}
+
+.bag-gem--dodecahedron {
+  clip-path: polygon(50% 0%, 88% 16%, 100% 58%, 72% 100%, 28% 100%, 0% 58%, 12% 16%);
+}
+
+.bag-gem--bipyramid {
+  clip-path: polygon(50% 0%, 94% 44%, 94% 56%, 50% 100%, 6% 56%, 6% 44%);
+}
+
+.bag-gem--brilliant {
+  clip-path: polygon(28% 6%, 72% 6%, 100% 38%, 50% 100%, 0% 38%);
+}
+
+.bag-gem--crystal {
+  clip-path: polygon(50% 0%, 82% 22%, 82% 78%, 50% 100%, 18% 78%, 18% 22%);
+}
+
+/* 荧光石：每个面一种颜色，图标用色环 + 高光点，不做单色渐变。 */
+.bag-gem--orb {
+  border-radius: 50%;
+  background:
+    radial-gradient(58% 58% at 34% 28%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 62%),
+    conic-gradient(
+      from 0deg,
+      #ff5f6d,
+      #ffb15f,
+      #f6f77a,
+      #7cf29c,
+      #62e0e6,
+      #6fb1ff,
+      #c98bff,
+      #ff5f6d
+    );
+  filter: drop-shadow(0 0 9px rgba(255, 255, 255, 0.6));
+}
+
+/* 数量：格子右下角的堆叠角标。 */
+.bag-count {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ffe9a8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.bag-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  opacity: 0.66;
+}
+
+@media (max-width: 640px) {
+  /* 手机上 6 列会挤成细条，改成 4 列。 */
+  .bag-list {
+    --bag-columns: 4;
+    gap: 6px;
+  }
+}

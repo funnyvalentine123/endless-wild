@@ -10,9 +10,11 @@ import {
   MINIMAP_RANGE_METERS,
 } from '../config/ui';
 import { require2DContext, requireElement } from '../core/dom';
+import type { GemSighting } from '../gems/GemManager';
 import type { PlayerState } from '../player/Player';
 import { sampleMapColor } from '../world/TerrainColoring';
 import type { World } from '../world/World';
+import { gemGlowColor } from './gemIcon';
 
 export interface BigMapHandlers {
   onOpenRequest: () => void;
@@ -63,6 +65,8 @@ export class BigMap {
   private playerYaw = 0;
   private liveTimer = 0;
   private coordsTimer = 0;
+  /** 宝石雷达点位：未解锁「宝石雷达」时为 null。 */
+  private gems: readonly GemSighting[] | null = null;
 
   private readonly handleOpenRequest = (): void => this.handlers.onOpenRequest();
   private readonly handleCloseRequest = (): void => this.handlers.onCloseRequest();
@@ -94,6 +98,11 @@ export class BigMap {
 
   get isOpen(): boolean {
     return !this.overlay.hidden;
+  }
+
+  /** 宝石雷达开关：由 Game 在解锁状态变化时写入点位，未解锁传 null。 */
+  setGems(spots: readonly GemSighting[] | null): void {
+    this.gems = spots;
   }
 
   open(state: PlayerState): void {
@@ -315,6 +324,7 @@ export class BigMap {
 
     this.drawGrid();
     this.drawRoad();
+    this.drawGems();
     this.drawScaleBar();
     this.drawNorth();
     this.drawPlayer();
@@ -376,6 +386,29 @@ export class BigMap {
     this.context.lineWidth = 1.5;
     this.context.stroke(path);
     this.context.restore();
+  }
+
+  /** 宝石雷达：用宝石光晕色画出附近的宝石；超出地图范围的不画。 */
+  private drawGems(): void {
+    if (!this.gems || this.gems.length === 0) return;
+
+    const context = this.context;
+    const margin = 6;
+
+    context.save();
+    context.shadowBlur = 8;
+    for (const gem of this.gems) {
+      const [px, py] = this.toCanvas(gem.x, gem.z);
+      if (px < -margin || px > SIZE + margin || py < -margin || py > SIZE + margin) continue;
+
+      const color = gemGlowColor(gem.kind);
+      context.shadowColor = color;
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(px, py, 3.2, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.restore();
   }
 
   private drawPlayer(): void {

@@ -1,0 +1,587 @@
+/* 功能合成台：沿用存档面板的遮罩与卡片，内容换成标签栏 + 图纸槽位 + 背包宝石。 */
+.craft-card {
+  width: min(94vw, 760px);
+  max-height: 92vh;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  background: rgba(10, 22, 30, 0.9);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ---------- 功能标签栏 ---------- */
+
+.craft-tabs {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.craft-tab {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.craft-tab:hover,
+.craft-tab:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.craft-tab.is-active {
+  border-color: rgba(243, 179, 61, 0.85);
+  background: rgba(243, 179, 61, 0.22);
+  transform: translateY(-1px);
+}
+
+.craft-tab-label {
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.craft-tab-count {
+  font-size: 10px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.craft-tab[data-status="completed"] {
+  border-color: rgba(126, 240, 176, 0.6);
+  background: rgba(60, 200, 140, 0.18);
+}
+
+.craft-tab[data-status="completed"] .craft-tab-count {
+  color: #9bf3c5;
+  opacity: 1;
+}
+
+.craft-tab[data-status="unlocked"] .craft-tab-count {
+  color: #ffe9a8;
+}
+
+/* ---------- 信息 + 图纸 ---------- */
+
+.craft-body {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.craft-info {
+  flex: 0 0 190px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.craft-info h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.craft-summary {
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.72;
+}
+
+.craft-facts {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.craft-needs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.craft-need {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  opacity: 0.66;
+}
+
+.craft-need.is-ready {
+  opacity: 1;
+}
+
+.craft-need-gem {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.craft-need-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.craft-need-progress {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: #ffe9a8;
+}
+
+/* 图纸舞台：网格居中，粒子覆盖在同一块区域上。 */
+.craft-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.32) 76%);
+  overflow: hidden;
+}
+
+.craft-grid {
+  --craft-cell: clamp(38px, 8.4vmin, 54px);
+  --craft-cols: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--craft-cols), var(--craft-cell));
+  gap: 6px;
+  z-index: 1;
+}
+
+/* 图纸格子：空格用虚线框 + 淡色宝石剪影，摆上后变成实心宝石。 */
+.craft-cell {
+  position: relative;
+  width: var(--craft-cell);
+  height: var(--craft-cell);
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.2) 74%);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.25s, transform 0.2s;
+}
+
+/* 留白格：不画边框，只占位保持形状。 */
+.craft-cell.is-void {
+  visibility: hidden;
+}
+
+.craft-cell .bag-gem {
+  width: 58%;
+  height: 58%;
+}
+
+/* 未填充时的剪影提示：低透明度，告诉玩家这一格要摆什么形状。 */
+.craft-cell .craft-ghost {
+  opacity: 0.22;
+  filter: none;
+}
+
+.craft-cell.is-filled {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: radial-gradient(120% 120% at 50% 8%, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.26) 76%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 14px rgba(255, 255, 255, 0.12);
+}
+
+.craft-cell.is-filled .bag-gem {
+  animation: craft-gem-pop 0.35s ease-out;
+}
+
+/* 摆错种类：边框偏红，合成时会被校验拦下。 */
+.craft-cell.is-wrong {
+  border-color: rgba(255, 120, 110, 0.7);
+  background: radial-gradient(120% 120% at 50% 8%, rgba(255, 120, 110, 0.2), rgba(0, 0, 0, 0.28) 76%);
+}
+
+.craft-cell.is-drop-target {
+  border-color: rgba(243, 179, 61, 0.9);
+  box-shadow: 0 0 16px rgba(243, 179, 61, 0.55);
+  transform: scale(1.05);
+}
+
+.craft-grid.is-disabled {
+  cursor: default;
+}
+
+/* 摆满时的一次性“充能”闪光。 */
+.craft-grid.is-charged .craft-cell.is-filled {
+  animation: craft-cell-charge 1.1s ease-out;
+}
+
+/* 合成完成后保留的常驻光效：槽位里的宝石一直呼吸式发光。 */
+.craft-grid.is-completed .craft-cell.is-filled {
+  border-color: rgba(255, 226, 150, 0.55);
+  animation: craft-cell-complete 2.6s ease-in-out infinite;
+}
+
+.craft-grid.is-completed::after {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  border-radius: 18px;
+  background: radial-gradient(
+    60% 60% at 50% 50%,
+    rgba(255, 214, 128, 0.22),
+    rgba(255, 214, 128, 0) 70%
+  );
+  animation: craft-aura 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ---------- 粒子特效 ---------- */
+
+.craft-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.craft-particle {
+  position: absolute;
+  width: var(--p-size, 6px);
+  height: var(--p-size, 6px);
+  border-radius: 50%;
+  /* 白色内核 + 宝石色外晕：深色背景上也能看清每一颗粒子。 */
+  background: radial-gradient(
+    circle,
+    #ffffff 0 26%,
+    var(--p-color, #fff) 62%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  box-shadow: 0 0 10px var(--p-color, #fff), 0 0 22px var(--p-color, #fff);
+  mix-blend-mode: screen;
+  transform: translate(-50%, -50%) scale(0.4);
+  opacity: 0;
+  animation: craft-particle-fly var(--p-duration, 900ms) cubic-bezier(0.16, 0.84, 0.32, 1) forwards;
+  animation-delay: var(--p-delay, 0ms);
+}
+
+/* 摆满 / 合成成功时从图纸中心扩散的一圈光波：用渐变做细环，放大时不会变成粗色块。 */
+.craft-fx.is-firing::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140px;
+  height: 140px;
+  margin: -70px 0 0 -70px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 240, 200, 0) 56%,
+    rgba(255, 240, 200, 0.38) 62%,
+    rgba(255, 240, 200, 0) 70%
+  );
+  opacity: 0;
+  animation: craft-ring 900ms ease-out forwards;
+}
+
+.craft-fx.is-celebrating::before {
+  background: radial-gradient(
+    circle,
+    rgba(255, 214, 128, 0) 52%,
+    rgba(255, 214, 128, 0.5) 60%,
+    rgba(255, 214, 128, 0) 72%
+  );
+}
+
+.craft-fx.is-celebrating::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%);
+  animation: craft-flash 1.2s ease-out forwards;
+}
+
+@keyframes craft-particle-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--p-x)), calc(-50% + var(--p-y))) scale(0.15);
+  }
+}
+
+@keyframes craft-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+@keyframes craft-flash {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(26);
+  }
+}
+
+@keyframes craft-gem-pop {
+  0% {
+    transform: scale(0.4) rotate(-18deg);
+    opacity: 0.3;
+  }
+  60% {
+    transform: scale(1.14) rotate(6deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+
+@keyframes craft-cell-charge {
+  0% {
+    box-shadow: 0 0 0 rgba(255, 226, 150, 0);
+    transform: scale(1);
+  }
+  35% {
+    box-shadow: 0 0 26px rgba(255, 226, 150, 0.85);
+    transform: scale(1.08);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 226, 150, 0.25);
+    transform: scale(1);
+  }
+}
+
+@keyframes craft-cell-complete {
+  0%,
+  100% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 12px rgba(255, 226, 150, 0.28);
+  }
+  50% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 24px rgba(255, 226, 150, 0.72);
+  }
+}
+
+@keyframes craft-aura {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+/* ---------- 背包宝石与操作按钮 ---------- */
+
+.craft-materials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.craft-materials.is-empty-all::after {
+  content: "背包里没有可用的宝石：去世界里走近发光的宝石收集，或点「调试 · 全部解锁」。";
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.6;
+}
+
+.craft-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: grab;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+}
+
+.craft-chip:hover,
+.craft-chip:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  outline: none;
+}
+
+.craft-chip.is-selected {
+  border-color: rgba(243, 179, 61, 0.9);
+  background: rgba(243, 179, 61, 0.28);
+  transform: translateY(-1px);
+}
+
+.craft-chip.is-empty {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.craft-chip.is-dragging {
+  opacity: 0.55;
+}
+
+.craft-chip-gem {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.craft-chip-label {
+  letter-spacing: 1px;
+}
+
+.craft-chip-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #ffe9a8;
+}
+
+.craft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.craft-actions button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  padding: 9px 16px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.craft-actions button:hover:not(:disabled),
+.craft-actions button:focus-visible:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+  outline: none;
+}
+
+.craft-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#craftCraft {
+  border-color: rgba(243, 179, 61, 0.6);
+  background: rgba(243, 179, 61, 0.3);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+#craftCraft:hover:not(:disabled) {
+  background: rgba(243, 179, 61, 0.46);
+}
+
+#craftDebug {
+  margin-left: auto;
+  border-color: rgba(126, 200, 255, 0.4);
+  color: #bfe4ff;
+}
+
+#craftDebug:hover {
+  background: rgba(126, 200, 255, 0.22);
+}
+
+#craftStatus[data-empty="true"] {
+  visibility: hidden;
+}
+
+#craftStatus[data-ok="false"] {
+  color: #ffb4a6;
+}
+
+@media (max-width: 760px) {
+  .craft-card {
+    width: 100%;
+    padding: 14px;
+  }
+
+  .craft-body {
+    flex-direction: column;
+  }
+
+  .craft-info {
+    flex: 0 0 auto;
+  }
+
+  .craft-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .craft-overlay {
+    padding: 8px;
+  }
+
+  .craft-stage {
+    min-height: 180px;
+    padding: 12px;
+  }
+
+  .craft-tab {
+    padding: 6px 8px;
+  }
+}

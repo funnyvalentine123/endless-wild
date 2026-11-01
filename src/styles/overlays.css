@@ -11,8 +11,21 @@
 #start .card {
   max-width: 440px;
   width: calc(100% - 40px);
+  max-height: 92vh;
+  overflow-y: auto;
   padding: 30px 28px;
   text-align: center;
+}
+
+#start .sealed-note {
+  margin: 10px 0 2px;
+  padding: 8px 12px;
+  border: 1px dashed rgba(255, 211, 130, 0.45);
+  border-radius: 10px;
+  background: rgba(255, 211, 130, 0.1);
+  font-size: 12px;
+  line-height: 1.7;
+  color: #ffe9a8;
 }
 
 #start h1 {

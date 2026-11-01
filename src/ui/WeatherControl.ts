@@ -12,7 +12,10 @@ export class WeatherControl {
   private readonly kindSelect = requireElement<HTMLSelectElement>('weatherKind');
   private readonly levelSelect = requireElement<HTMLSelectElement>('weatherLevel');
   private readonly group = this.autoBox.closest('.weather');
-  private disabled = false;
+  /** 沙漠核心区不允许操纵天气。 */
+  private desertBlocked = false;
+  /** 合成系统：还没解锁「天气控制」。 */
+  private locked = false;
 
   private readonly handleAuto = (): void => this.handlers.onAutoChange(this.autoBox.checked);
   private readonly handleManual = (): void => {
@@ -38,14 +41,16 @@ export class WeatherControl {
 
   /** 沙漠中天气操控不可用：整组控件禁用，并给出提示。 */
   setDisabled(disabled: boolean): void {
-    if (disabled === this.disabled) return;
-    this.disabled = disabled;
-    const hint = disabled ? '沙漠中无法操纵天气' : '';
-    this.autoBox.title = hint;
-    this.kindSelect.title = hint;
-    this.levelSelect.title = hint;
-    this.group?.classList.toggle('is-disabled', disabled);
-    this.updateLevelEnabled();
+    if (disabled === this.desertBlocked) return;
+    this.desertBlocked = disabled;
+    this.applyBlocked();
+  }
+
+  /** 合成系统：未解锁「天气控制」时整组控件禁用。 */
+  setLocked(locked: boolean): void {
+    if (locked === this.locked) return;
+    this.locked = locked;
+    this.applyBlocked();
   }
 
   dispose(): void {
@@ -54,9 +59,29 @@ export class WeatherControl {
     this.levelSelect.removeEventListener('change', this.handleManual);
   }
 
+  private get blocked(): boolean {
+    return this.desertBlocked || this.locked;
+  }
+
+  private applyBlocked(): void {
+    const blocked = this.blocked;
+    const hint = this.locked
+      ? '还没解锁「天气控制」：到合成台 (C) 合成后可用'
+      : this.desertBlocked
+        ? '沙漠中无法操纵天气'
+        : '';
+
+    this.autoBox.title = hint;
+    this.kindSelect.title = hint;
+    this.levelSelect.title = hint;
+    this.group?.classList.toggle('is-disabled', blocked);
+    this.updateLevelEnabled();
+  }
+
   private updateLevelEnabled(): void {
-    this.autoBox.disabled = this.disabled;
-    this.kindSelect.disabled = this.disabled;
-    this.levelSelect.disabled = this.disabled || this.kindSelect.value === 'clear';
+    const blocked = this.blocked;
+    this.autoBox.disabled = blocked;
+    this.kindSelect.disabled = blocked;
+    this.levelSelect.disabled = blocked || this.kindSelect.value === 'clear';
   }
 }

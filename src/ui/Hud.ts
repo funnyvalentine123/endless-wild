@@ -16,9 +16,11 @@ interface HudElements {
   altitude: HTMLElement;
   clock: HTMLElement;
   weather: HTMLElement;
+  gemCount: HTMLElement;
   seed: HTMLElement;
   compass: HTMLElement;
   fps: HTMLElement;
+  toast: HTMLElement;
 }
 
 /** 左上角信息面板与右上角罗盘文字。内部按固定频率节流。 */
@@ -26,6 +28,7 @@ export class Hud {
   private readonly elements: HudElements;
   private readonly fpsMeter = new FpsMeter();
   private timer = 0;
+  private toastTimer = 0;
 
   constructor(
     private readonly world: World,
@@ -37,9 +40,11 @@ export class Hud {
       altitude: requireElement('alt'),
       clock: requireElement('clock'),
       weather: requireElement('weatherNow'),
+      gemCount: requireElement('gemCount'),
       seed: requireElement('seed'),
       compass: requireElement('compass'),
       fps: requireElement('fps'),
+      toast: requireElement('toast'),
     };
     this.elements.seed.textContent = String(seed);
   }
@@ -47,6 +52,23 @@ export class Hud {
   /** 最近一次统计出的实时帧率，供调试接口读取。 */
   get fps(): number {
     return this.fpsMeter.value;
+  }
+
+  /** 背包里的宝石总数，收进一颗或载入存档后调用。 */
+  setGemCount(total: number): void {
+    this.elements.gemCount.textContent = String(total);
+  }
+
+  /** 收集提示：短暂浮现后自动淡出，连续收宝石时只重置同一条提示。 */
+  announce(text: string): void {
+    const toast = this.elements.toast;
+    toast.textContent = text;
+    toast.dataset.visible = 'true';
+    if (this.toastTimer !== 0) window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => {
+      this.toastTimer = 0;
+      toast.dataset.visible = 'false';
+    }, 1800);
   }
 
   update(dt: number, state: PlayerState, hour: number, weather: string): void {
