@@ -45,7 +45,7 @@
     <button id="skyBigOpen" class="map-button" type="button" aria-haspopup="dialog" aria-expanded="false" hidden>天穹大视野 (N)</button>
   </div>
 
-  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · -/= 调速 · M 大地图 · N 天穹 · P 存档 · B 背包 · C 合成台 · Esc 释放鼠标</div>
+  <div id="hint">点击画面锁定视角 · WASD 移动 · Shift 奔跑 · 空格跳跃 · F 自动前进 · -/= 调速 · M 大地图 · N 天穹 · P 存档 · B 背包 · K 拍照 · C 合成台 · Esc 释放鼠标</div>
 
   <nav id="bar" class="panel" aria-label="游戏操作">
     <div class="speed" role="group" aria-label="移动速度">
@@ -78,6 +78,8 @@
     <button id="bOasis" type="button" title="传送到最近的绿洲湖边（调试用）">去绿洲</button>
     <button id="bSave" type="button" title="打开存档面板：保存、载入、导入导出存档">存档 (P)</button>
     <button id="bBag" type="button" title="查看背包里收集到的宝石">背包 (B)</button>
+    <button id="bAlbum" type="button" title="旅途相册：翻看沿途拍下的风景（K 拍照）">相册</button>
+    <button id="bCodex" type="button" title="宝石图鉴：查看已发现的宝石与首次发现地点">图鉴</button>
     <button id="bNew" type="button">新世界</button>
     <button id="barMore" type="button" aria-expanded="false" aria-label="展开更多操作">更多</button>
   </nav>
@@ -90,7 +92,7 @@
       <h1>无尽山野</h1>
       <p>一条没有尽头的小路，向前走，世界会在你脚下生长。</p>
       <p>森林、河流、山坡、湖泊与沙漠 —— 每一步都是新的风景。</p>
-      <p class="sealed-note">开局即可行走、跳跃与查看背包；地图、视角与 F 自动前进也始终可用。<br />其余功能都要在合成台里用宝石合成解锁；解锁「宝石雷达」后，地图会用彩色光点标出附近的宝石。</p>
+      <p class="sealed-note">开局即可行走、跳跃与查看背包；地图、视角与 F 自动前进也始终可用。<br />沿路每 500m 立着一块里程碑木牌，合成「旅途相册」后按 K 可以把眼前的风景存下来。<br />其余功能都要在合成台里用宝石合成解锁；解锁「宝石雷达」后，地图会用彩色光点标出附近的宝石。</p>
       <div class="keys">
         <kbd>W A S D</kbd><span>前后左右移动（默认可用）</span>
         <kbd>鼠标</kbd><span>环顾四周（点击画面锁定）</span>
@@ -105,6 +107,8 @@
         <kbd>N</kbd><span>打开天穹大视野（需合成「天穹视角」）</span>
         <kbd>P</kbd><span>存档面板（需合成）</span>
         <kbd>B</kbd><span>背包：查看收集到的宝石（默认可用）</span>
+        <kbd>K</kbd><span>拍下当前风景，存进旅途相册（需合成）</span>
+        <kbd>图鉴</kbd><span>查看所有宝石的发现记录与出现条件（需合成）</span>
         <kbd>雷达</kbd><span>解锁后小地图与大地图显示附近宝石（需合成）</span>
       </div>
       <button id="go" type="button">开始探索</button>
@@ -211,7 +215,57 @@
       <div id="bagList" class="bag-list"></div>
       <p id="bagEmpty" class="bag-empty">还没有收集到宝石，走近发光的宝石就会飞进你的身体。</p>
 
+      <section class="bag-refine" aria-labelledby="bagRefineTitle">
+        <header class="bag-refine-head">
+          <h3 id="bagRefineTitle">宝石合成</h3>
+          <span>2 颗低阶宝石 → 1 颗高阶宝石 · 按获取难度逐级向上</span>
+        </header>
+        <div id="bagRefineList" class="refine-list"></div>
+        <p id="bagRefineStatus" class="save-status" aria-live="polite"></p>
+      </section>
+
       <footer class="save-foot">共 <b id="bagTotal">0</b> 颗宝石</footer>
+    </section>
+  </div>
+
+  <div id="albumPanel" class="save-overlay" hidden>
+    <section class="save-card album-card panel" role="dialog" aria-modal="true" aria-labelledby="albumTitle">
+      <header class="save-head">
+        <div>
+          <h2 id="albumTitle">旅途相册</h2>
+          <p class="save-meta">按 K 记录当下的风景；照片与拍摄地会随存档一起保存，最多保留 16 张</p>
+        </div>
+        <button id="albumClose" class="big-map-close" type="button" aria-label="关闭相册">×</button>
+      </header>
+
+      <div id="albumGrid" class="album-grid"></div>
+      <p id="albumEmpty" class="album-empty">还没有照片。走到喜欢的风景前按 K 拍一张。</p>
+
+      <footer class="save-foot">共 <b id="albumCount">0</b> 张照片</footer>
+
+      <div id="albumViewer" class="album-viewer" hidden>
+        <img id="albumViewerImage" alt="旅途照片大图" />
+        <div class="album-viewer-bar">
+          <span id="albumViewerMeta"></span>
+          <button id="albumViewerClose" type="button">关闭大图</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="codexPanel" class="save-overlay" hidden>
+    <section class="save-card codex-card panel" role="dialog" aria-modal="true" aria-labelledby="codexTitle">
+      <header class="save-head">
+        <div>
+          <h2 id="codexTitle">宝石图鉴</h2>
+          <p class="save-meta">第一次捡到某种宝石时记录发现的时间、世界种子与坐标；累计数量不会被合成消耗扣掉</p>
+        </div>
+        <button id="codexClose" class="big-map-close" type="button" aria-label="关闭宝石图鉴">×</button>
+      </header>
+
+      <div id="codexGrid" class="codex-grid"></div>
+
+      <footer class="save-foot">已发现 <b id="codexFound">0</b> / <b id="codexTotal">0</b> 种宝石</footer>
     </section>
   </div>
 

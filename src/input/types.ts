@@ -7,6 +7,7 @@ export type InputAction =
   | 'toggle-save'
   | 'toggle-bag'
   | 'toggle-craft'
+  | 'take-photo'
   | 'close-map'
   | 'speed-down'
   | 'speed-up';

@@ -10,6 +10,8 @@ const SHAPE_CLASS: Record<GemShape, string> = {
   brilliant: 'bag-gem--brilliant',
   crystal: 'bag-gem--crystal',
   orb: 'bag-gem--orb',
+  shard: 'bag-gem--shard',
+  star: 'bag-gem--star',
 };
 
 export function hexColor(value: number): string {

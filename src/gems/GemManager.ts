@@ -3,9 +3,11 @@ import {
   BufferAttribute,
   CanvasTexture,
   Color,
+  ConeGeometry,
   CylinderGeometry,
   DodecahedronGeometry,
   DoubleSide,
+  ExtrudeGeometry,
   Group,
   IcosahedronGeometry,
   LatheGeometry,
@@ -14,6 +16,7 @@ import {
   MeshStandardMaterial,
   OctahedronGeometry,
   RepeatWrapping,
+  Shape,
   SRGBColorSpace,
   Sprite,
   SpriteMaterial,
@@ -331,12 +334,40 @@ function createGemShape(shape: GemShape): BufferGeometry {
     case 'orb':
       // 细分 1 次 = 80 个三角面，每个面一种颜色，看起来像一块彩色马赛克球。
       return paintRainbowFaces(new IcosahedronGeometry(r, 1));
+    case 'shard':
+      // 冰晶石：细长的四棱冰锥，和双锥 / 六棱晶体的轮廓明显不同。
+      return new ConeGeometry(r * 0.55, r * 1.9, 4);
+    case 'star': {
+      // 日耀石：五角星挤出一点厚度，正面看是一个带倒角的小太阳。
+      const shape = new Shape();
+      const spikes = 5;
+      for (let i = 0; i < spikes * 2; i++) {
+        const angle = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+        const radius = i % 2 === 0 ? r : r * 0.44;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        if (i === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+      }
+      shape.closePath();
+
+      const geometry = new ExtrudeGeometry(shape, {
+        depth: r * 0.5,
+        steps: 1,
+        bevelEnabled: true,
+        bevelSize: r * 0.07,
+        bevelThickness: r * 0.07,
+        bevelSegments: 1,
+      });
+      geometry.center();
+      return geometry;
+    }
   }
 }
 
 /**
- * 宝石系统：固定宝石随区块扫描生成，红宝石跟随动物，紫宝石只在雨雪天出现，
- * 荧光石只在夜晚出现。
+ * 宝石系统：固定宝石随区块扫描生成，红宝石跟随动物，紫宝石 / 冰晶石 / 日耀石
+ * 分别只在雨天 / 雪天 / 晴天白昼出现，荧光石只在夜晚出现。
  *
  * 每颗宝石 = 1 个发光多面体 + 1 张始终朝向相机的光晕 + 1 根半透明光柱，
  * 最多十余颗同时存在，因此不为了省 draw call 做实例化。
@@ -365,6 +396,10 @@ export class GemManager {
 
   private purpleTimer = 0;
   private purpleSerial = 0;
+  private frostTimer = 0;
+  private frostSerial = 0;
+  private sunTimer = 0;
+  private sunSerial = 0;
   private glowTimer = 0;
   private glowSerial = 0;
   /** 开局先等一会儿再找动物，避免一进游戏就有宝石贴在牛身上。 */
@@ -495,6 +530,8 @@ export class GemManager {
 
     this.updateRed(dt, state.x, state.z);
     this.updatePurple(dt, state.x, state.z, weather, waterLevel);
+    this.updateFrost(dt, state.x, state.z, weather, waterLevel);
+    this.updateSun(dt, state.x, state.z, weather, daylight, waterLevel);
     this.updateGlow(dt, state.x, state.z, daylight, waterLevel);
     if (Math.abs(waterLevel - this.lastWaterLevel) > 0.02) {
       this.lastWaterLevel = waterLevel;
@@ -736,10 +773,8 @@ export class GemManager {
     weather: WeatherSnapshot,
     waterLevel: number,
   ): void {
-    if (weather.precipitation < GEM_DYNAMIC.purple.minPrecipitation) {
-      for (const entry of this.entries.values()) {
-        if (entry.kind === 'purple' && entry.collectTime === undefined) this.removeEntry(entry);
-      }
+    if (weather.kind !== 'rain' || weather.precipitation < GEM_DYNAMIC.purple.minPrecipitation) {
+      this.recycleWeatherGems('purple');
       return;
     }
 
@@ -755,6 +790,74 @@ export class GemManager {
 
     const key = `purple:${this.purpleSerial++}`;
     this.addEntry(key, 'purple', spot.x, spot.z, this.surfaceY(spot.x, spot.z, waterLevel));
+  }
+
+  /** 冰晶石：只在雪天生成，雪停后立即回收。 */
+  private updateFrost(
+    dt: number,
+    playerX: number,
+    playerZ: number,
+    weather: WeatherSnapshot,
+    waterLevel: number,
+  ): void {
+    if (weather.kind !== 'snow' || weather.snow < GEM_DYNAMIC.frost.minSnow) {
+      this.recycleWeatherGems('frost');
+      return;
+    }
+
+    this.frostTimer -= dt;
+    if (this.frostTimer > 0) return;
+    this.frostTimer = GEM_DYNAMIC.frost.interval;
+
+    if (this.countKind('frost') >= GEM_DEFINITIONS.frost.maxActive) return;
+    if (this.random() >= GEM_DYNAMIC.frost.chance) return;
+
+    const spot = this.findOpenSpot(playerX, playerZ, GEM_DYNAMIC.frost, true);
+    if (!spot) return;
+
+    const key = `frost:${this.frostSerial++}`;
+    this.addEntry(key, 'frost', spot.x, spot.z, this.surfaceY(spot.x, spot.z, waterLevel));
+  }
+
+  /** 日耀石：只在晴天白昼生成，天黑或转成雨雪后立即回收。 */
+  private updateSun(
+    dt: number,
+    playerX: number,
+    playerZ: number,
+    weather: WeatherSnapshot,
+    daylight: number,
+    waterLevel: number,
+  ): void {
+    if (
+      weather.kind !== 'clear' ||
+      weather.precipitation > GEM_DYNAMIC.sun.maxPrecipitation ||
+      daylight < GEM_DYNAMIC.sun.minDaylight
+    ) {
+      this.recycleWeatherGems('sun');
+      return;
+    }
+
+    this.sunTimer -= dt;
+    if (this.sunTimer > 0) return;
+    this.sunTimer = GEM_DYNAMIC.sun.interval;
+
+    if (this.countKind('sun') >= GEM_DEFINITIONS.sun.maxActive) return;
+    if (this.random() >= GEM_DYNAMIC.sun.chance) return;
+
+    const spot = this.findOpenSpot(playerX, playerZ, GEM_DYNAMIC.sun, true);
+    if (!spot) return;
+
+    const key = `sun:${this.sunSerial++}`;
+    this.addEntry(key, 'sun', spot.x, spot.z, this.surfaceY(spot.x, spot.z, waterLevel));
+  }
+
+  /** 天气条件消失后回收对应的动态宝石；正在飞进身体的交给拾取动画收尾。 */
+  private recycleWeatherGems(kind: GemKind): void {
+    const stale: GemEntry[] = [];
+    for (const entry of this.entries.values()) {
+      if (entry.kind === kind && entry.collectTime === undefined) stale.push(entry);
+    }
+    for (const entry of stale) this.removeEntry(entry);
   }
 
   /**

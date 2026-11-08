@@ -1,4 +1,4 @@
-import { GEM_KINDS, type GemKind } from '../config/gems';
+import { DYNAMIC_GEM_KINDS, GEM_KINDS, type GemKind } from '../config/gems';
 
 /** 存档里每种宝石的数量；数量为 0 的品类不写入，保持存档紧凑。 */
 export type GemCounts = Partial<Record<GemKind, number>>;
@@ -23,7 +23,7 @@ const MAX_PER_KIND = 9999;
 const MAX_TAKEN = 4000;
 
 /** 动态宝石的钥匙带自增序号，不能当作“已收走”的依据。 */
-const DYNAMIC_KEY_PREFIXES = ['red:', 'purple:', 'glow:'] as const;
+const DYNAMIC_KEY_PREFIXES = DYNAMIC_GEM_KINDS.map((kind) => `${kind}:`);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -1,6 +1,6 @@
 import type { InputAction } from './types';
 
-/** 键盘状态 + F/T/V/M/N/P/B/C 与 -/= 快捷键。鼠标与触摸通过虚拟按键复用同一套状态。 */
+/** 键盘状态 + F/T/V/M/N/P/B/K/C 与 -/= 快捷键。鼠标与触摸通过虚拟按键复用同一套状态。 */
 export class Keyboard {
   private readonly keys = new Set<string>();
   private active = false;
@@ -17,6 +17,7 @@ export class Keyboard {
     if (event.code === 'KeyN') this.onAction('toggle-sky-view');
     if (event.code === 'KeyP') this.onAction('toggle-save');
     if (event.code === 'KeyB') this.onAction('toggle-bag');
+    if (event.code === 'KeyK') this.onAction('take-photo');
     if (event.code === 'KeyC') this.onAction('toggle-craft');
     if (event.code === 'Minus' || event.code === 'NumpadSubtract') this.onAction('speed-down');
     if (event.code === 'Equal' || event.code === 'NumpadAdd') this.onAction('speed-up');

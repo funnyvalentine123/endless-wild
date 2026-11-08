@@ -8,12 +8,21 @@ export interface ToolbarHandlers {
   onTeleportOasis: () => void;
   onOpenSave: () => void;
   onOpenBag: () => void;
+  onOpenAlbum: () => void;
+  onOpenCodex: () => void;
   onOpenCraft: () => void;
   onNewWorld: () => void;
 }
 
 /** 会被合成系统锁住的按钮。`teleport` 为两个调试传送按钮（只能靠调试一键解锁放行）。 */
-export type ToolbarLockTarget = 'time' | 'view' | 'save' | 'bag' | 'teleport';
+export type ToolbarLockTarget =
+  | 'time'
+  | 'view'
+  | 'save'
+  | 'bag'
+  | 'album'
+  | 'codex'
+  | 'teleport';
 
 /** #bar 左右各留 12px 边距，与 CSS 的 max-width 保持一致。 */
 const BAR_MARGIN = 24;
@@ -34,6 +43,8 @@ export class Toolbar {
   private readonly oasisButton = requireElement<HTMLButtonElement>('bOasis');
   private readonly saveButton = requireElement<HTMLButtonElement>('bSave');
   private readonly bagButton = requireElement<HTMLButtonElement>('bBag');
+  private readonly albumButton = requireElement<HTMLButtonElement>('bAlbum');
+  private readonly codexButton = requireElement<HTMLButtonElement>('bCodex');
   private readonly newButton = requireElement<HTMLButtonElement>('bNew');
   private readonly moreButton = requireElement<HTMLButtonElement>('barMore');
   private readonly items: HTMLElement[];
@@ -50,6 +61,8 @@ export class Toolbar {
   private readonly handleOasis = (): void => this.handlers.onTeleportOasis();
   private readonly handleSave = (): void => this.handlers.onOpenSave();
   private readonly handleBag = (): void => this.handlers.onOpenBag();
+  private readonly handleAlbum = (): void => this.handlers.onOpenAlbum();
+  private readonly handleCodex = (): void => this.handlers.onOpenCodex();
   private readonly handleNew = (): void => this.handlers.onNewWorld();
   private readonly handleMore = (): void => this.setOpen(!this.bar.classList.contains('open'));
   private readonly handleBarClick = (event: MouseEvent): void => {
@@ -70,6 +83,8 @@ export class Toolbar {
     this.oasisButton.addEventListener('click', this.handleOasis);
     this.saveButton.addEventListener('click', this.handleSave);
     this.bagButton.addEventListener('click', this.handleBag);
+    this.albumButton.addEventListener('click', this.handleAlbum);
+    this.codexButton.addEventListener('click', this.handleCodex);
     this.newButton.addEventListener('click', this.handleNew);
     this.moreButton.addEventListener('click', this.handleMore);
     this.bar.addEventListener('click', this.handleBarClick);
@@ -80,6 +95,8 @@ export class Toolbar {
       this.viewButton,
       this.saveButton,
       this.bagButton,
+      this.albumButton,
+      this.codexButton,
       this.desertButton,
       this.oasisButton,
     ]) {
@@ -126,6 +143,8 @@ export class Toolbar {
     if (target === 'time') return this.timeButton;
     if (target === 'view') return this.viewButton;
     if (target === 'save') return this.saveButton;
+    if (target === 'album') return this.albumButton;
+    if (target === 'codex') return this.codexButton;
     return this.bagButton;
   }
 
@@ -138,6 +157,8 @@ export class Toolbar {
     this.oasisButton.removeEventListener('click', this.handleOasis);
     this.saveButton.removeEventListener('click', this.handleSave);
     this.bagButton.removeEventListener('click', this.handleBag);
+    this.albumButton.removeEventListener('click', this.handleAlbum);
+    this.codexButton.removeEventListener('click', this.handleCodex);
     this.newButton.removeEventListener('click', this.handleNew);
     this.moreButton.removeEventListener('click', this.handleMore);
     this.bar.removeEventListener('click', this.handleBarClick);

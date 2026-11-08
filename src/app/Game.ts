@@ -5,6 +5,7 @@ import { GameLoop } from '../core/GameLoop';
 import { requireElement } from '../core/dom';
 import { FAST_TIME_SCALE, NORMAL_TIME_SCALE } from '../config/daynight';
 import { GEM_DEFINITIONS, GEM_KINDS, type GemKind } from '../config/gems';
+import { findSynthesisRecipe } from '../config/gemSynthesis';
 import { SPEED_SCALE_MIN } from '../config/player';
 import {
   CRAFT_FEATURE_ORDER,
@@ -13,6 +14,13 @@ import {
   type FeatureId,
 } from '../config/unlocks';
 import { Inventory } from '../inventory/Inventory';
+import { Album } from '../album/Album';
+import { AlbumPanel } from '../ui/AlbumPanel';
+import { GemCodex } from '../codex/GemCodex';
+import { CodexPanel } from '../ui/CodexPanel';
+import { formatClock } from '../ui/format';
+import { MilestoneSigns } from '../world/MilestoneSigns';
+import { formatMilestoneKm } from '../world/milestones';
 import { clamp } from '../math/scalar';
 import type { PlayerIntent } from '../player/Player';
 import { InventoryPanel } from '../ui/InventoryPanel';
@@ -30,6 +38,7 @@ import { CameraRig } from '../player/CameraRig';
 import { Hero } from '../player/Hero';
 import { Player } from '../player/Player';
 import { GemManager } from '../gems/GemManager';
+import { synthesizeGem } from '../gems/GemSynthesis';
 import { SceneEnvironment } from '../render/environment/SceneEnvironment';
 import { Viewport } from '../render/Viewport';
 import { downloadTextFile } from '../save/download';
@@ -62,11 +71,16 @@ import { RoadMeshBuilder } from '../world/streaming/RoadMeshBuilder';
 import { WorldStreamer } from '../world/streaming/WorldStreamer';
 
 /** 未解锁时点击按钮给出的提示文案。 */
-const LOCKED_HINT: Record<'time' | 'view' | 'save' | 'bag' | 'teleport', string> = {
+const LOCKED_HINT: Record<
+  'time' | 'view' | 'save' | 'bag' | 'album' | 'codex' | 'teleport',
+  string
+> = {
   time: '还没解锁「时间流逝」：到合成台 (C) 合成后可用',
   view: '还没解锁「第三人称」：到合成台 (C) 合成后可用',
   save: '还没解锁「存档面板」：到合成台 (C) 合成后可用',
   bag: '还没解锁「背包」：到合成台 (C) 合成后可用',
+  album: '还没解锁「旅途相册」：到合成台 (C) 合成后可用',
+  codex: '还没解锁「宝石图鉴」：到合成台 (C) 合成后可用',
   teleport: '调试传送按钮：点合成台的「调试 · 全部解锁」后放行',
 };
 
@@ -85,6 +99,8 @@ export class Game {
   private readonly wildlife: WildlifeManager;
   private readonly village: VillageManager;
   private readonly inventory: Inventory;
+  private readonly album: Album;
+  private readonly codex: GemCodex;
   private readonly unlock: UnlockSystem;
   private readonly unlockStore: UnlockStore;
   private readonly gems: GemManager;
@@ -103,7 +119,10 @@ export class Game {
   private readonly save: SaveService;
   private readonly savePanel: SavePanel;
   private readonly bagPanel: InventoryPanel;
+  private readonly albumPanel: AlbumPanel;
+  private readonly codexPanel: CodexPanel;
   private readonly craftPanel: CraftPanel;
+  private readonly milestones: MilestoneSigns;
   private readonly startScreen: StartScreen;
   private readonly toolbar: Toolbar;
   private readonly speedControl: SpeedControl;
@@ -128,6 +147,8 @@ export class Game {
   private uiWeatherAuto: boolean | null = null;
   /** 宝石雷达刷新节流：宝石点位不需要每帧重算，0.25s 一次足够。 */
   private radarTimer = 0;
+  /** K 键按下后等下一帧渲染完再截图：WebGL 画布的内容只在渲染后的同一任务里可靠。 */
+  private photoRequest = false;
 
   constructor() {
     // 有本地存档时把它的种子作为兜底：URL 与上次游玩的世界优先，避免旧存档把世界拉回去。
@@ -155,6 +176,9 @@ export class Game {
     );
     // 背包先建好：宝石拾取要用它查“这颗是否已经收过”，存档也要从这里取扩展段。
     this.inventory = new Inventory();
+    this.album = new Album();
+    // 图鉴记录首次拾取的时间 / 种子 / 坐标，和背包数量分开保存。
+    this.codex = new GemCodex();
     // 功能解锁：纯逻辑对象 + 独立 localStorage 槽位（换世界也不会丢进度）。
     this.unlock = new UnlockSystem();
     this.unlockStore = UnlockStore.local();
@@ -178,6 +202,8 @@ export class Game {
     );
     const roadBuilder = new RoadMeshBuilder(this.world, this.materials, this.roadPropAssets);
     this.streamer = new WorldStreamer(this.viewport.scene, chunkBuilder, roadBuilder);
+    // 里程碑木牌不参与区块流式：沿路每隔 500m 一块，独立管理贴图缓存更省心。
+    this.milestones = new MilestoneSigns(this.viewport.scene, this.world);
 
     this.player = new Player(this.world, this.streamer);
     this.hero = new Hero(this.viewport.scene);
@@ -212,6 +238,18 @@ export class Game {
       key: 'inventory',
       capture: () => this.inventory.toSave(),
       restore: (value) => this.inventory.fromSave(value),
+    });
+    // 旅途相册：照片缩略图与拍摄地一起随存档走。
+    this.save.registerSection({
+      key: 'album',
+      capture: () => this.album.toSave(),
+      restore: (value) => this.album.fromSave(value),
+    });
+    // 宝石图鉴：首次发现记录与累计数量。
+    this.save.registerSection({
+      key: 'codex',
+      capture: () => this.codex.toSave(),
+      restore: (value) => this.codex.fromSave(value),
     });
     // 解锁进度先读独立槽位：它不依赖世界种子，换世界 / 世界存档损坏时也能保住已解锁的功能。
     const storedUnlocks = this.unlockStore.load();
@@ -269,6 +307,8 @@ export class Game {
       onTeleportOasis: () => this.teleportToOasis(),
       onOpenSave: () => this.openSavePanel(),
       onOpenBag: () => this.openBagPanel(),
+      onOpenAlbum: () => this.openAlbumPanel(),
+      onOpenCodex: () => this.openCodexPanel(),
       onOpenCraft: () => this.toggleCraftPanel(),
       onNewWorld: () => this.loadNewWorld(),
     });
@@ -303,6 +343,7 @@ export class Game {
           entries: this.inventory.entries(),
           total: this.inventory.total,
         }),
+        synthesize: (recipeId) => this.synthesizeGems(recipeId),
       },
       { onCloseRequest: () => this.closeBagPanel() },
     );
@@ -318,6 +359,20 @@ export class Game {
         debugUnlock: () => this.debugUnlockAll(),
       },
       { onCloseRequest: () => this.closeCraftPanel() },
+    );
+    this.albumPanel = new AlbumPanel(
+      {
+        model: () => this.album.list,
+        remove: (id) => {
+          this.album.remove(id);
+          this.save.saveLocal();
+        },
+      },
+      { onCloseRequest: () => this.closeAlbumPanel() },
+    );
+    this.codexPanel = new CodexPanel(
+      { model: () => this.codex.list() },
+      { onCloseRequest: () => this.closeCodexPanel() },
     );
     // 初始状态：除地图、视角与 F 自动前进外，其余功能全部锁定。
     this.applyUnlocks();
@@ -345,6 +400,7 @@ export class Game {
     this.wildlife.dispose();
     this.village.dispose();
     this.gems.dispose();
+    this.milestones.dispose();
     this.hero.dispose();
     this.environment.dispose();
     this.viewport.dispose();
@@ -355,6 +411,8 @@ export class Game {
     this.skyView.dispose();
     this.savePanel.dispose();
     this.bagPanel.dispose();
+    this.albumPanel.dispose();
+    this.codexPanel.dispose();
     this.craftPanel.dispose();
     this.startScreen.dispose();
     this.toolbar.dispose();
@@ -403,6 +461,11 @@ export class Game {
     );
     this.village.update(dt, this.streamer.chunks);
     this.wildlife.update(dt, state.x, state.z);
+    // 里程碑木牌：走到下一块时播报一次，传送 / 载入造成的大跨度移动不播报。
+    const crossing = this.milestones.update(state.z);
+    if (crossing && this.started) {
+      this.hud.announce(`里程碑 · ${formatMilestoneKm(crossing.index)}`);
+    }
     this.gems.update(dt, state, this.weather.snapshot, waterLevel, daylight.daylightFactor);
     this.cameraRig.update(state, this.started, this.thirdPerson, dt);
 
@@ -438,6 +501,12 @@ export class Game {
     if (this.started) this.skyView.update(dt, state);
 
     this.viewport.render();
+
+    // 截图必须紧跟 render 的同一任务：WebGL 画布在浏览器合成后内容就不再可靠。
+    if (this.photoRequest) {
+      this.photoRequest = false;
+      this.capturePhoto();
+    }
   }
 
   private beginExploration(): void {
@@ -474,6 +543,8 @@ export class Game {
 
     // 先收起存档面板：它与大视野互斥，且不希望在打开地图时重新锁定鼠标。
     this.savePanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
     this.mapOpen = true;
     // 两个大视野不同时打开：大地图会完全盖住天穹视角。
     this.skyView.close();
@@ -508,6 +579,8 @@ export class Game {
     if (!this.started || this.skyView.isOpen) return;
 
     this.savePanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
     if (this.mapOpen) {
       this.mapOpen = false;
       this.bigMap.close();
@@ -524,19 +597,22 @@ export class Game {
     this.releaseOverlayInput();
   }
 
-  /** Esc：优先关掉正在打开的覆盖层（合成台 → 背包 → 存档面板 → 天穹 → 大地图）。 */
+  /** Esc：优先关掉正在打开的覆盖层（合成台 → 背包 → 图鉴 → 相册 → 存档面板 → 天穹 → 大地图）。 */
   private closeOverlays(): void {
     if (this.craftPanel.isOpen) this.closeCraftPanel();
     else if (this.bagPanel.isOpen) this.closeBagPanel();
+    else if (this.codexPanel.isOpen) this.closeCodexPanel();
+    else if (this.albumPanel.isOpen) this.closeAlbumPanel();
     else if (this.savePanel.isOpen) this.closeSavePanel();
     else if (this.skyView.isOpen) this.closeSkyView();
     else if (this.mapOpen) this.closeMap();
   }
 
-  /** 存档面板 / 背包 / 合成台 / 大视野都关掉后，才把 Pointer Lock 与鼠标转向交还给游戏。 */
+  /** 存档面板 / 背包 / 图鉴 / 相册 / 合成台 / 大视野都关掉后，才把 Pointer Lock 与鼠标转向交还给游戏。 */
   private releaseOverlayInput(): void {
     if (this.mapOpen || this.skyView.isOpen || this.savePanel.isOpen) return;
-    if (this.bagPanel.isOpen || this.craftPanel.isOpen) return;
+    if (this.bagPanel.isOpen || this.albumPanel.isOpen || this.craftPanel.isOpen) return;
+    if (this.codexPanel.isOpen) return;
 
     this.input.setOverlayMode(false);
     if (!this.input.isTouch) requestPointerLock(this.canvas);
@@ -556,6 +632,8 @@ export class Game {
     this.savePanel.open();
     if (this.craftPanel.isOpen) this.craftPanel.close();
     if (this.bagPanel.isOpen) this.bagPanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
     if (this.mapOpen) this.closeMap();
     if (this.skyView.isOpen) this.closeSkyView();
     this.input.setOverlayMode(true);
@@ -582,6 +660,8 @@ export class Game {
     // 与其他覆盖层同样的顺序：先打开自己，再关掉别人，避免释放鼠标时重新锁定。
     this.bagPanel.open();
     if (this.craftPanel.isOpen) this.craftPanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
     if (this.savePanel.isOpen) this.savePanel.close();
     if (this.mapOpen) this.closeMap();
     if (this.skyView.isOpen) this.closeSkyView();
@@ -607,6 +687,8 @@ export class Game {
 
     this.craftPanel.open();
     if (this.bagPanel.isOpen) this.bagPanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
     if (this.savePanel.isOpen) this.savePanel.close();
     if (this.mapOpen) this.closeMap();
     if (this.skyView.isOpen) this.closeSkyView();
@@ -619,6 +701,112 @@ export class Game {
 
     this.craftPanel.close();
     this.releaseOverlayInput();
+  }
+
+  /** 底部「相册」按钮：解锁后才能打开旅途相册。 */
+  private openAlbumPanel(): void {
+    if (!this.started || this.albumPanel.isOpen) return;
+    if (this.blockedByUnlock('album', '旅途相册')) return;
+
+    this.albumPanel.open();
+    if (this.craftPanel.isOpen) this.craftPanel.close();
+    if (this.bagPanel.isOpen) this.bagPanel.close();
+    if (this.codexPanel.isOpen) this.codexPanel.close();
+    if (this.savePanel.isOpen) this.savePanel.close();
+    if (this.mapOpen) this.closeMap();
+    if (this.skyView.isOpen) this.closeSkyView();
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeAlbumPanel(): void {
+    if (!this.albumPanel.isOpen) return;
+
+    this.albumPanel.close();
+    this.releaseOverlayInput();
+  }
+
+  /** 底部「图鉴」按钮：解锁后才能查看宝石图鉴。 */
+  private openCodexPanel(): void {
+    if (!this.started || this.codexPanel.isOpen) return;
+    if (this.blockedByUnlock('codex', '宝石图鉴')) return;
+
+    this.codexPanel.open();
+    if (this.craftPanel.isOpen) this.craftPanel.close();
+    if (this.bagPanel.isOpen) this.bagPanel.close();
+    if (this.albumPanel.isOpen) this.albumPanel.close();
+    if (this.savePanel.isOpen) this.savePanel.close();
+    if (this.mapOpen) this.closeMap();
+    if (this.skyView.isOpen) this.closeSkyView();
+    this.input.setOverlayMode(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  private closeCodexPanel(): void {
+    if (!this.codexPanel.isOpen) return;
+
+    this.codexPanel.close();
+    this.releaseOverlayInput();
+  }
+
+  /** K 键 / 调试按钮都走这里：未解锁「旅途相册」时拦下并提示去合成台。 */
+  private requestPhoto(): void {
+    if (!this.started) return;
+    if (this.blockedByUnlock('album', '旅途相册')) return;
+    this.photoRequest = true;
+  }
+
+  /**
+   * K 键：把当前画面压成一张缩略图存进旅途相册。
+   * 调用点必须是 `viewport.render()` 之后的同一帧，否则 WebGL 画布可能已被清空。
+   */
+  private capturePhoto(): void {
+    if (!this.started) return;
+
+    const sourceWidth = this.canvas.width;
+    const sourceHeight = this.canvas.height;
+    if (sourceWidth <= 0 || sourceHeight <= 0) return;
+
+    const width = 480;
+    const height = Math.max(1, Math.round((width * sourceHeight) / sourceWidth));
+    const frame = document.createElement('canvas');
+    frame.width = width;
+    frame.height = height;
+    const context = frame.getContext('2d');
+    if (!context) return;
+    context.drawImage(this.canvas, 0, 0, width, height);
+
+    let thumb: string;
+    try {
+      thumb = frame.toDataURL('image/jpeg', 0.62);
+    } catch {
+      this.hud.announce('这张照片没能存下来：浏览器拒绝了画布导出');
+      return;
+    }
+
+    const state = this.player.state;
+    const hour = this.dayNight.hour;
+    const weather = formatWeatherLabel(this.weather.kind, this.weather.level);
+    const biome = this.world.biomeAt(state.x, state.z);
+    const photo = this.album.add({
+      at: Date.now(),
+      seed: this.seed,
+      x: state.x,
+      z: state.z,
+      y: state.y,
+      yaw: state.yaw,
+      pitch: state.pitch,
+      hour,
+      weather,
+      biome,
+      title: `${weather} · ${biome} · ${formatClock(hour)}`,
+      thumb,
+    });
+
+    // 照片跟存档走：拍完立刻静默落盘，关掉页面也不会丢。
+    this.save.saveLocal();
+    this.hud.announce(`已存入旅途相册（${this.album.count} 张）：${photo.title}`);
+    if (this.albumPanel.isOpen) this.albumPanel.refresh();
   }
 
   private exportSaveFile(): string {
@@ -636,13 +824,43 @@ export class Game {
     };
   }
 
-  /** 宝石飞进身体后由 GemManager 回调：写进背包并同步 UI。 */
+  /** 宝石飞进身体后由 GemManager 回调：写进背包、记录图鉴并同步 UI。 */
   private collectGem(kind: GemKind, key: string): void {
     this.inventory.add(kind, key);
+
+    const state = this.player.state;
+    const { first } = this.codex.record(kind, {
+      at: Date.now(),
+      seed: this.seed,
+      x: state.x,
+      z: state.z,
+    });
+
     this.hud.setGemCount(this.inventory.total);
-    // 提示只报本次收获 +1，不报累计数量（累计数量看 HUD / 背包格子即可）。
-    this.hud.announce(`收进背包：${GEM_DEFINITIONS[kind].label} +1`);
+    // 第一次发现时把“图鉴新增”一起报出来；之后只报本次收获 +1。
+    const label = GEM_DEFINITIONS[kind].label;
+    this.hud.announce(
+      first
+        ? `收进背包：${label} +1 · 图鉴新增（${this.codex.discovered}/${this.codex.total}）`
+        : `收进背包：${label} +1`,
+    );
     if (this.bagPanel.isOpen) this.bagPanel.refresh();
+    if (this.codexPanel.isOpen) this.codexPanel.refresh();
+  }
+
+  /** 宝石合成：2 颗低阶宝石 → 1 颗高阶宝石，成功后同步 HUD、图纸可用数量与存档。 */
+  private synthesizeGems(recipeId: string): { ok: boolean; message: string } {
+    const recipe = findSynthesisRecipe(recipeId);
+    if (!recipe) return { ok: false, message: '未知的宝石合成配方。' };
+
+    const result = synthesizeGem(recipe, this.inventory);
+    if (result.outcome !== 'ok') return { ok: false, message: result.message };
+
+    this.hud.setGemCount(this.inventory.total);
+    this.hud.announce(result.message);
+    this.craftPanel.refresh();
+    this.save.saveLocal();
+    return { ok: true, message: result.message };
   }
 
   /** 载入 / 导入存档后同步背包与解锁相关的 UI（数量、站点、解锁状态都变了）。 */
@@ -651,6 +869,8 @@ export class Game {
     // 新背包里已经收走过的固定站点，可能还留在当前场景里，要先清掉避免重复计数。
     this.gems.dropTakenSites();
     this.bagPanel.refresh();
+    this.albumPanel.refresh();
+    this.codexPanel.refresh();
     // 存档里带着解锁进度：载入后重新应用锁定状态并同步独立槽位。
     this.applyUnlocks();
     this.persistUnlocks();
@@ -824,6 +1044,8 @@ export class Game {
     this.toolbar.setLocked('time', !unlocked('time'), LOCKED_HINT.time);
     this.toolbar.setLocked('view', !unlocked('view'), LOCKED_HINT.view);
     this.toolbar.setLocked('save', !unlocked('save'), LOCKED_HINT.save);
+    this.toolbar.setLocked('album', !unlocked('album'), LOCKED_HINT.album);
+    this.toolbar.setLocked('codex', !unlocked('codex'), LOCKED_HINT.codex);
     // 行走 / 跳跃 / 背包是默认能力，不再上锁。
     this.toolbar.setLocked('bag', false);
     this.toolbar.setLocked('teleport', !this.unlock.debugUnlocked, LOCKED_HINT.teleport);
@@ -1000,6 +1222,7 @@ export class Game {
     else if (action === 'toggle-save') this.toggleSavePanel();
     else if (action === 'toggle-bag') this.toggleBagPanel();
     else if (action === 'toggle-craft') this.toggleCraftPanel();
+    else if (action === 'take-photo') this.requestPhoto();
     else if (action === 'close-map') this.closeOverlays();
     else if (action === 'speed-down') this.changeSpeed(-1);
     else if (action === 'speed-up') this.changeSpeed(1);
@@ -1079,6 +1302,21 @@ export class Game {
       openBagPanel: () => this.openBagPanel(),
       closeBagPanel: () => this.closeBagPanel(),
       isBagPanelOpen: () => this.bagPanel.isOpen,
+      // 相册：takePhoto 走和 K 键同一条路径，等下一帧渲染完再截图。
+      takePhoto: () => {
+        this.requestPhoto();
+      },
+      albumPhotos: () => this.album.list,
+      openAlbumPanel: () => this.openAlbumPanel(),
+      closeAlbumPanel: () => this.closeAlbumPanel(),
+      isAlbumPanelOpen: () => this.albumPanel.isOpen,
+      // 图鉴：list 包含未发现条目（entry 为 null），方便测试检查“首次拾取即解锁”。
+      codexEntries: () => this.codex.list(),
+      codexState: () => ({ discovered: this.codex.discovered, total: this.codex.total }),
+      openCodexPanel: () => this.openCodexPanel(),
+      closeCodexPanel: () => this.closeCodexPanel(),
+      isCodexPanelOpen: () => this.codexPanel.isOpen,
+      milestoneIndex: () => this.milestones.index,
       openCraftPanel: () => this.openCraftPanel(),
       closeCraftPanel: () => this.closeCraftPanel(),
       isCraftPanelOpen: () => this.craftPanel.isOpen,

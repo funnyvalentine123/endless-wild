@@ -153,6 +153,7 @@ describe('合成图纸', () => {
   });
 
   it('越靠后的功能消耗越多常见的绿 / 黄宝石', () => {
+    // 前两档速度不消耗沙漠 / 绿洲的黄绿蓝，宝石分布更均匀。
     const count = (id: FeatureId, kind: 'green' | 'yellow' | 'blue'): number =>
       FEATURES[id].needs.find((need) => need.kind === kind)?.count ?? 0;
 
@@ -167,6 +168,29 @@ describe('合成图纸', () => {
       expect(count('radar', kind)).toBeGreaterThanOrEqual(1);
     }
   });
+
+  it('第一次加速不要求跑去沙漠 / 绿洲找黄绿蓝，且每种宝石都分散在多张图纸里', () => {
+    const kinds = (id: FeatureId): string[] => FEATURES[id].needs.map((need) => need.kind);
+
+    for (const id of ['speed1', 'speed2'] as const) {
+      expect(kinds(id)).not.toContain('blue');
+      expect(kinds(id)).not.toContain('green');
+      expect(kinds(id)).not.toContain('yellow');
+    }
+
+    const usage = new Map<string, number>();
+    for (const id of CRAFT_FEATURE_ORDER) {
+      for (const need of FEATURES[id].needs) {
+        usage.set(need.kind, (usage.get(need.kind) ?? 0) + 1);
+      }
+    }
+
+    // 除终极黑宝石外，每种宝石至少出现在 5 张图纸里，避免“只有两三个功能用得到”。
+    for (const kind of ['red', 'purple', 'glow', 'frost', 'sun', 'blue', 'green', 'yellow', 'diamond'] as const) {
+      expect(usage.get(kind) ?? 0).toBeGreaterThanOrEqual(5);
+    }
+    expect(usage.get('black')).toBe(1);
+  });
 });
 
 describe('槽位摆放', () => {
@@ -174,14 +198,14 @@ describe('槽位摆放', () => {
     const unlock = new UnlockSystem();
     const inventory = new Inventory();
 
-    // speed1 第一行是「.b.」，0 号格是留白；1 号格要蓝宝石。
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('no-stock');
-    expect(unlock.placeGem('speed1', 99, 'blue', inventory)).toBe('no-cell');
+    // speed1 第一行是「.s.」，0 号格是留白；1 号格要日耀石。
+    expect(unlock.placeGem('speed1', 1, 'sun', inventory)).toBe('no-stock');
+    expect(unlock.placeGem('speed1', 99, 'sun', inventory)).toBe('no-cell');
     expect(unlock.placeGem('speed1', 0, 'green', inventory)).toBe('void-cell');
 
-    inventory.add('blue');
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('occupied');
+    inventory.add('sun');
+    expect(unlock.placeGem('speed1', 1, 'sun', inventory)).toBe('ok');
+    expect(unlock.placeGem('speed1', 1, 'sun', inventory)).toBe('occupied');
     expect(unlock.filledCount('speed1')).toBe(1);
 
     expect(unlock.removeGem('speed1', 1)).toBe(true);
@@ -198,12 +222,12 @@ describe('槽位摆放', () => {
     expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('ok');
     // 唯一一颗蓝宝石已经被「速度 · 1 档」的草稿占用。
     expect(unlock.available('blue', inventory, 'speed2')).toBe(0);
-    expect(unlock.placeGem('speed2', 0, 'blue', inventory)).toBe('no-stock');
+    expect(unlock.placeGem('speed2', 1, 'blue', inventory)).toBe('no-stock');
     // 排除自身时，当前功能仍然能继续摆。
     expect(unlock.available('blue', inventory, 'speed1')).toBe(1);
 
     unlock.removeGem('speed1', 1);
-    expect(unlock.placeGem('speed2', 0, 'blue', inventory)).toBe('ok');
+    expect(unlock.placeGem('speed2', 1, 'blue', inventory)).toBe('ok');
     expect(unlock.reserved('blue', 'speed2')).toBe(0);
     expect(unlock.reserved('blue')).toBe(1);
   });
@@ -243,14 +267,13 @@ describe('合成校验', () => {
     const inventory = new Inventory();
     grantNeeds(inventory, 'speed1');
 
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('ok');
+    expect(unlock.placeGem('speed1', 1, 'sun', inventory)).toBe('ok');
     const result = unlock.craft('speed1', inventory);
     expect(result.outcome).toBe('incomplete');
     expect(result.message).toContain('3');
     // 失败不动库存。
-    expect(inventory.count('blue')).toBe(1);
-    expect(inventory.count('green')).toBe(2);
-    expect(inventory.count('yellow')).toBe(1);
+    expect(inventory.count('sun')).toBe(2);
+    expect(inventory.count('red')).toBe(2);
   });
 
   it('宝石种类数量不对时拒绝合成', () => {
@@ -258,11 +281,11 @@ describe('合成校验', () => {
     const inventory = new Inventory();
     for (let index = 0; index < 4; index++) inventory.add('blue');
 
-    // 图纸要「蓝1 绿2 黄1」，这里四个槽位全摆蓝宝石。
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 3, 'blue', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 4, 'blue', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 5, 'blue', inventory)).toBe('ok');
+    // 图纸要「日耀石2 红宝石2」，这里四个槽位全摆蓝宝石。
+    const slots = FEATURES.speed1.cells.flatMap((cell, index) => (cell.kind ? [index] : []));
+    for (const index of slots) {
+      expect(unlock.placeGem('speed1', index, 'blue', inventory)).toBe('ok');
+    }
     const result = unlock.craft('speed1', inventory);
     expect(result.outcome).toBe('mismatch');
     expect(result.message).toContain('多');
@@ -293,9 +316,8 @@ describe('合成校验', () => {
     const result = unlock.craft('speed1', inventory);
     expect(result.outcome).toBe('ok');
     expect(result.feature?.id).toBe('speed1');
-    expect(inventory.count('blue')).toBe(0);
-    expect(inventory.count('green')).toBe(0);
-    expect(inventory.count('yellow')).toBe(0);
+    expect(inventory.count('sun')).toBe(0);
+    expect(inventory.count('red')).toBe(0);
     // 别的宝石不受影响。
     expect(inventory.count('purple')).toBe(1);
     expect(unlock.status('speed1')).toBe('completed');
@@ -320,11 +342,14 @@ describe('合成校验', () => {
     const inventory = new Inventory();
     grantNeeds(inventory, 'speed1');
 
-    // 图纸要求 蓝1 绿2 黄1，这里把蓝 / 绿故意反着摆。
-    expect(unlock.placeGem('speed1', 1, 'green', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 3, 'blue', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 4, 'green', inventory)).toBe('ok');
-    expect(unlock.placeGem('speed1', 5, 'yellow', inventory)).toBe('ok');
+    // 图纸要求 日耀石2 / 红宝石2，这里把顺序完全反着摆。
+    const gems = FEATURES.speed1.needs
+      .flatMap((need) => Array.from({ length: need.count }, () => need.kind))
+      .reverse();
+    const slots = FEATURES.speed1.cells.flatMap((cell, index) => (cell.kind ? [index] : []));
+    slots.forEach((index, order) => {
+      expect(unlock.placeGem('speed1', index, gems[order], inventory)).toBe('ok');
+    });
     expect(unlock.craft('speed1', inventory).outcome).toBe('ok');
   });
 });
@@ -485,10 +510,10 @@ describe('解锁存档', () => {
     grantNeeds(inventory, 'speed1');
 
     const unlock = new UnlockSystem();
-    expect(unlock.placeGem('speed1', 1, 'blue', inventory)).toBe('ok');
-    unlock.mergeFromSave({ drafts: { speed1: ['green', 'green'] } }, inventory);
+    expect(unlock.placeGem('speed1', 1, 'sun', inventory)).toBe('ok');
+    unlock.mergeFromSave({ drafts: { speed1: ['red', 'red'] } }, inventory);
 
-    expect(unlock.draft('speed1')[1]).toBe('blue');
+    expect(unlock.draft('speed1')[1]).toBe('sun');
     expect(unlock.filledCount('speed1')).toBe(1);
   });
 });

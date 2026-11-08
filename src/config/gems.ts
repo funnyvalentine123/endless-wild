@@ -2,7 +2,8 @@
  * 宝石系统参数。
  *
  * 宝石是散布在世界里的低概率收集物：固定地点由种子与地形规则决定，
- * 红宝石跟随动物、紫宝石只在雨雪天出现、荧光石只在夜晚出现，其余五种绑定具体生境。
+ * 红宝石跟随动物、紫宝石只在雨天出现、冰晶石只在雪天出现、日耀石只在晴天白昼出现、
+ * 荧光石只在夜晚出现，其余五种绑定具体生境。
  * 出现概率先按“每个区块 / 每个地标 / 每座山”给出，后续可以直接调这一张表。
  */
 export type GemKind =
@@ -13,7 +14,9 @@ export type GemKind =
   | 'purple'
   | 'diamond'
   | 'black'
-  | 'glow';
+  | 'glow'
+  | 'frost'
+  | 'sun';
 
 /** 每种宝石使用不同的几何体，远看轮廓就能分辨，不必只靠颜色。 */
 export type GemShape =
@@ -24,7 +27,9 @@ export type GemShape =
   | 'bipyramid'
   | 'brilliant'
   | 'crystal'
-  | 'orb';
+  | 'orb'
+  | 'shard'
+  | 'star';
 
 export interface GemDefinition {
   readonly kind: GemKind;
@@ -87,7 +92,7 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     color: 0xbb5cff,
     glow: 0xc86bff,
     maxActive: 3,
-    rule: '只在雨雪天出现',
+    rule: '只在雨天出现',
   },
   diamond: {
     kind: 'diamond',
@@ -119,6 +124,24 @@ export const GEM_DEFINITIONS: Record<GemKind, GemDefinition> = {
     maxActive: 2,
     rule: '只在夜晚随机出现，每个面一种颜色',
   },
+  frost: {
+    kind: 'frost',
+    label: '冰晶石',
+    shape: 'shard',
+    color: 0xaee9ff,
+    glow: 0x7fdcff,
+    maxActive: 3,
+    rule: '只在雪天出现',
+  },
+  sun: {
+    kind: 'sun',
+    label: '日耀石',
+    shape: 'star',
+    color: 0xffb02f,
+    glow: 0xffc24d,
+    maxActive: 2,
+    rule: '只在晴天白昼出现',
+  },
 };
 
 /** 生成顺序固定，调试与测试都依赖这个顺序。 */
@@ -131,7 +154,15 @@ export const GEM_KINDS: readonly GemKind[] = [
   'diamond',
   'black',
   'glow',
+  'frost',
+  'sun',
 ];
+
+/**
+ * 不参与固定站点扫描的宝石：跟随动物、跟随天气或只在夜晚出现。
+ * 它们的 key 带自增序号，不能记进“已收走的固定站点”。
+ */
+export const DYNAMIC_GEM_KINDS = ['red', 'purple', 'glow', 'frost', 'sun'] as const;
 
 /** 外观：宝石中心与主角身高中心齐平，大小约为身高的一半。 */
 export const GEM_VISUALS = {
@@ -266,13 +297,33 @@ export const GEM_RULES = {
 
 export const GEM_DYNAMIC = {
   purple: {
-    /** 雨雪天每隔多久尝试生成一次。 */
+    /** 雨天每隔多久尝试生成一次。 */
     interval: 2.2,
     chance: 0.3,
     minDistance: 55,
     maxDistance: 250,
-    /** 低于该降水强度就视为晴天并回收紫宝石。 */
+    /** 低于该降水强度就视为雨停了并回收紫宝石。 */
     minPrecipitation: 0.08,
+  },
+  frost: {
+    /** 雪天每隔多久尝试生成一次。 */
+    interval: 2.6,
+    chance: 0.3,
+    minDistance: 55,
+    maxDistance: 250,
+    /** 低于该降雪强度就视为雪停了并回收冰晶石。 */
+    minSnow: 0.08,
+  },
+  sun: {
+    /** 晴天白昼每隔多久尝试生成一次。 */
+    interval: 3.2,
+    chance: 0.28,
+    minDistance: 60,
+    maxDistance: 240,
+    /** 日照因子低于该值就是夜晚 / 黄昏，日耀石立即回收。 */
+    minDaylight: 0.55,
+    /** 降水还没淡出完时不生成，避免雨后立刻冒出日耀石。 */
+    maxPrecipitation: 0.02,
   },
   glow: {
     /** 夜晚每隔多久尝试生成一次。 */

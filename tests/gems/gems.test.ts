@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { GEM_COLLECT, GEM_DEFINITIONS, GEM_KINDS, GEM_RULES, GEM_VISUALS } from '../../src/config/gems';
+import {
+  GEM_COLLECT,
+  GEM_DEFINITIONS,
+  GEM_DYNAMIC,
+  GEM_KINDS,
+  GEM_RULES,
+  GEM_VISUALS,
+} from '../../src/config/gems';
 import { DESERT } from '../../src/config/desert';
 import { OASIS_WATER_EDGE } from '../../src/config/oasis';
 import { ROAD_WIDTH, WATER_LEVEL } from '../../src/config/world';
@@ -23,12 +30,13 @@ function collectSites(world: World, radius: number) {
 }
 
 describe('宝石系统', () => {
-  it('八种宝石定义完整、形状与颜色互不相同，尺寸约为主角身高的一半', () => {
-    expect(GEM_KINDS).toHaveLength(8);
-    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].label)).size).toBe(8);
-    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].glow)).size).toBe(8);
+  it('十种宝石定义完整、形状与颜色互不相同，尺寸约为主角身高的一半', () => {
+    expect(GEM_KINDS).toHaveLength(10);
+    const total = GEM_KINDS.length;
+    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].label)).size).toBe(total);
+    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].glow)).size).toBe(total);
     // 每种宝石的几何体形状都不一样，远看轮廓就能分辨。
-    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].shape)).size).toBe(8);
+    expect(new Set(GEM_KINDS.map((kind) => GEM_DEFINITIONS[kind].shape)).size).toBe(total);
 
     for (const kind of GEM_KINDS) {
       const definition = GEM_DEFINITIONS[kind];
@@ -50,6 +58,27 @@ describe('宝石系统', () => {
     expect(GEM_COLLECT.duration).toBeGreaterThan(0);
     expect(GEM_COLLECT.endScale).toBeGreaterThan(0);
     expect(GEM_COLLECT.endScale).toBeLessThan(1);
+  });
+
+  it('天气专属宝石分别绑定雨 / 雪 / 晴天白昼', () => {
+    // 三种天气宝石各自有独立的生成参数，不会在别的天气里出现。
+    expect(GEM_DYNAMIC.purple.minPrecipitation).toBeGreaterThan(0);
+    expect(GEM_DYNAMIC.frost.minSnow).toBeGreaterThan(0);
+    expect(GEM_DYNAMIC.sun.minDaylight).toBeGreaterThan(0);
+    // 日耀石要求降水基本淡出，避免雨刚停就和紫宝石重叠。
+    expect(GEM_DYNAMIC.sun.maxPrecipitation).toBeLessThan(
+      GEM_DYNAMIC.purple.minPrecipitation,
+    );
+
+    expect(GEM_DEFINITIONS.purple.rule).toContain('雨');
+    expect(GEM_DEFINITIONS.frost.rule).toContain('雪');
+    expect(GEM_DEFINITIONS.sun.rule).toContain('晴');
+
+    for (const kind of ['purple', 'frost', 'sun'] as const) {
+      expect(GEM_DYNAMIC[kind].chance).toBeGreaterThan(0);
+      expect(GEM_DYNAMIC[kind].chance).toBeLessThanOrEqual(0.5);
+      expect(GEM_DEFINITIONS[kind].maxActive).toBeGreaterThan(0);
+    }
   });
 
   it('固定宝石站点只出现在对应生境，并且生成结果可复现', () => {

@@ -1,12 +1,13 @@
 import { DESERT } from '../config/desert';
-import { GEM_KINDS, GEM_RULES, type GemKind } from '../config/gems';
+import { DYNAMIC_GEM_KINDS, GEM_KINDS, GEM_RULES, type GemKind } from '../config/gems';
 import { OASIS, OASIS_WATER_EDGE } from '../config/oasis';
 import { CHUNK_SIZE, ROAD_WIDTH, WATER_LEVEL } from '../config/world';
 import { createRandom, hashChunk } from '../math/random';
 import { hoodooSiteAt } from '../world/desertLandmarks';
 import type { World } from '../world/World';
 
-type StaticGemKind = Exclude<GemKind, 'red' | 'purple' | 'glow'>;
+type DynamicGemKind = (typeof DYNAMIC_GEM_KINDS)[number];
+type StaticGemKind = Exclude<GemKind, DynamicGemKind>;
 
 export interface GemSite {
   /** 稳定标识：同一区块重复扫描会得到同一把钥匙，避免重复创建。 */
@@ -25,8 +26,10 @@ const SALTS: Record<StaticGemKind, number> = {
   yellow: 0x5e607294,
 };
 
+const DYNAMIC_SET = new Set<string>(DYNAMIC_GEM_KINDS);
+
 const SITE_KINDS: readonly StaticGemKind[] = GEM_KINDS.filter(
-  (kind): kind is StaticGemKind => kind !== 'red' && kind !== 'purple' && kind !== 'glow',
+  (kind): kind is StaticGemKind => !DYNAMIC_SET.has(kind),
 );
 
 /**

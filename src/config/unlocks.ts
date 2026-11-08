@@ -12,15 +12,17 @@ export type FeatureId =
   | 'jump'
   | 'bag'
   | 'speed1'
+  | 'album'
   | 'speed2'
   | 'sprint'
+  | 'codex'
   | 'time'
   | 'speed3'
   | 'weather'
   | 'view'
   | 'radar'
-  | 'sky'
   | 'save'
+  | 'sky'
   | 'speed4'
   | 'speed5'
   | 'speed6'
@@ -36,7 +38,7 @@ export function isDefaultFeature(id: FeatureId): boolean {
 }
 
 /** 图纸里的单字符缩写 → 宝石品类。 */
-export type RecipeGem = 'b' | 'g' | 'y' | 'p' | 'd' | 'k' | 'r' | 'o';
+export type RecipeGem = 'b' | 'g' | 'y' | 'p' | 'd' | 'k' | 'r' | 'o' | 'f' | 's';
 
 export const RECIPE_GEM_KINDS: Record<RecipeGem, GemKind> = {
   b: 'blue',
@@ -47,6 +49,8 @@ export const RECIPE_GEM_KINDS: Record<RecipeGem, GemKind> = {
   k: 'black',
   r: 'red',
   o: 'glow',
+  f: 'frost',
+  s: 'sun',
 };
 
 /** 图纸里表示“这一格是空白”的字符。 */
@@ -89,9 +93,13 @@ export interface FeatureSpec extends FeatureDefinition {
 /**
  * 图纸文案里的形状说明只是给玩家看的；真实形状由 `layout` 决定。
  *
- * 难度梯度：从“4 颗常见宝石”逐级过渡到“22 颗、含黑宝石”。
- * 越靠后的功能图纸越大、重复的绿 / 黄 / 蓝宝石越多，稀有宝石（紫 / 钻石 / 红 / 荧光 / 黑）
- * 只出现在对应的中高阶图纸里。速度 1~7 档拆成 7 个独立功能，档位越高格子越多。
+ * 难度与宝石分布原则：
+ * - 前两张速度图纸（1 / 2 档）只用路边就能遇到的日耀石、红宝石，配一点雨天紫宝石与夜间荧光石，
+ *   不要求玩家为了第一次加速跑去沙漠 / 绿洲找黄绿蓝；
+ * - 从「奔跑」开始消耗蓝 / 绿 / 黄，正好接上新手礼包；
+ * - 紫 / 荧光 / 冰晶从基础功能逐步出现，钻石、黑宝石只留在中高阶；
+ * - 所有宝石都尽量分散到多张图纸里，避免某一种宝石只在两三个功能里出现；
+ * - 越靠后的功能图纸越大，速度 1~7 档拆成 7 个独立功能，档位越高格子越多。
  *
  * 行走、跳跃、背包是开局默认能力，不参与合成（图纸为空）。
  */
@@ -117,86 +125,98 @@ const FEATURE_SEEDS: readonly FeatureDefinition[] = [
   {
     id: 'speed1',
     label: '速度 · 1 档',
-    summary: '速度上限提到 ×1.5，赶路不再只能慢慢挪。',
-    layout: ['.b.', 'gyg'],
+    summary: '速度上限提到 ×1.5。只用晴天白昼的日耀石与跟随动物的红宝石，不必离开道路去找沙漠 / 绿洲宝石。',
+    layout: ['.s.', 'r.r', '.s.'],
+  },
+  {
+    id: 'album',
+    label: '旅途相册',
+    summary: '解锁 K 键拍照与底部「相册」面板，把沿途风景存进旅途相册。',
+    layout: ['ss.', 'r.r', '.r.'],
   },
   {
     id: 'speed2',
     label: '速度 · 2 档',
-    summary: '速度上限提到 ×2，追着动物跑刚刚好。',
-    layout: ['b.g', 'ygy', '.b.'],
+    summary: '速度上限提到 ×2。仍然以日耀石、红宝石为主，加一点雨天紫宝石与夜间荧光石。',
+    layout: ['.ss', 'rr.', 'po.'],
   },
   {
     id: 'sprint',
     label: '奔跑',
-    summary: '解锁 Shift 奔跑，短距离冲刺速度翻倍。',
-    layout: ['y..y', '.gg.', 'byyb'],
+    summary: '解锁 Shift 奔跑。开始用到蓝 / 绿 / 黄宝石，正好消耗新手礼包。',
+    layout: ['sro', 'bgy', 'b.p'],
+  },
+  {
+    id: 'codex',
+    label: '宝石图鉴',
+    summary: '解锁底部「图鉴」面板：查看所有宝石的首次发现记录与出现条件。',
+    layout: ['srp', 'bgo', 'psr'],
   },
   {
     id: 'time',
     label: '时间流逝',
-    summary: '解锁 T 键，昼夜可以加速推进，方便等荧光石与夜空。',
-    layout: ['.g.g.', 'g.d.g', 'g.g.g', '.y.y.'],
+    summary: '解锁 T 键，昼夜可以加速推进，方便等荧光石、日耀石与夜空。',
+    layout: ['sgo.', 'gyp.', 'sboo'],
   },
   {
     id: 'speed3',
     label: '速度 · 3 档',
     summary: '速度上限提到 ×3，跨越草原来去如风。',
-    layout: ['yy.y', '.gg.', 'yy.y', '.gg.'],
+    layout: ['ssby', 'gbpy', 'bgy.'],
   },
   {
     id: 'weather',
     label: '天气控制',
-    summary: '解锁底部天气组：手动切换晴 / 雨 / 雪与强度。',
-    layout: ['.y.y.', 'ygygy', '.yyy.'],
+    summary: '解锁底部天气组：手动切换晴 / 雨 / 雪与强度，图鉴里的天气宝石都能稳定刷取。',
+    layout: ['spsp', 'foof', 'obgf'],
   },
   {
     id: 'view',
     label: '第三人称',
-    summary: '解锁 V 键，在第三人称与第一人称之间切换。',
-    layout: ['..g..', '.gpg.', 'gb.bg', '.g.g.'],
+    summary: '解锁 V 键，在第三人称与第一人称之间切换；第一次需要一颗钻石。',
+    layout: ['sbygb', 'pg..f', 'sypyd'],
   },
   {
     id: 'radar',
     label: '宝石雷达',
     summary: '在小地图与大地图上用彩色光点标出附近的宝石位置。',
-    layout: ['.y.y.', 'y.g.y', '.y.y.', 'g.b.g', '..y..'],
-  },
-  {
-    id: 'sky',
-    label: '天穹视角',
-    summary: '解锁 N 键天穹大视野，从正上方俯瞰整片山野。',
-    layout: ['o...o', '.y.y.', 'o.b.o', '.y.y.', 'o...o', '..p..'],
+    layout: ['ybgyo', 'bgf.p', 'sybgo'],
   },
   {
     id: 'save',
     label: '存档面板',
     summary: '解锁 P 键存档：保存、载入、导入导出世界进度。',
-    layout: ['y...y', '.g.g.', 'y.b.y', '.g.g.', 'y.y.y', '..d..'],
+    layout: ['ybgyd', 'gybyp', 'ggbod'],
+  },
+  {
+    id: 'sky',
+    label: '天穹视角',
+    summary: '解锁 N 键天穹大视野，从正上方俯瞰整片山野。',
+    layout: ['sogo.', 'py..y', 'sbgof', 'pbgy.'],
   },
   {
     id: 'speed4',
     label: '速度 · 4 档',
     summary: '速度上限提到 ×4，一路冲上山脊也不费时间。',
-    layout: ['..y..', '.yyy.', 'ygpgy', '.yyy.', '..y..'],
+    layout: ['sgybg', 'yr.f.', 'bdop.', 'sbggy'],
   },
   {
     id: 'speed5',
     label: '速度 · 5 档',
-    summary: '速度上限提到 ×5，紫宝石压阵的高阶图纸。',
-    layout: ['.gyg.', 'g.p.g', 'b.y.b', 'g.y.g', '.gyg.'],
+    summary: '速度上限提到 ×5，冰晶石与紫宝石一起压阵的高阶图纸。',
+    layout: ['yygyr', 'bpg.b', 'fyosd', 'dgygs'],
   },
   {
     id: 'speed6',
     label: '速度 · 6 档',
-    summary: '速度上限提到 ×6，需要红宝石与紫宝石双重供奉。',
-    layout: ['yy.yy', 'g.g.g', 'y.r.y', 'gyp.g', 'yy.yy'],
+    summary: '速度上限提到 ×6，需要红宝石与冰晶石的持续供奉。',
+    layout: ['gyyygg', 'by..yb', 'gppf.o', 'srrofd'],
   },
   {
     id: 'speed7',
     label: '速度 · 7 档',
     summary: '速度上限提到 ×7。终极图纸，需要一颗黑宝石。',
-    layout: ['gyygy', 'gy.yg', 'g.k.g', 'gybyg', 'gyygy'],
+    layout: ['gyygg', 'ybby.', 'grkog', 'dpfrd', 'sfopy'],
   },
 ];
 

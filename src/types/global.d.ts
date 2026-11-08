@@ -4,6 +4,8 @@ import type { GemSighting } from '../gems/GemManager';
 import type { GemSite } from '../gems/sites';
 import type { InventoryData } from '../inventory/Inventory';
 import type { FeatureId } from '../config/unlocks';
+import type { AlbumPhoto } from '../album/Album';
+import type { CodexEntry } from '../codex/GemCodex';
 import type { WeatherKind, WeatherLevel } from '../config/weather';
 import type { PlayerState } from '../player/Player';
 import type { SaveResult } from '../save/SaveService';
@@ -118,6 +120,20 @@ export interface WildDebugApi {
   openBagPanel(): void;
   closeBagPanel(): void;
   isBagPanelOpen(): boolean;
+  /** 旅途相册：takePhoto 与按 K 等价，会在下一帧渲染完成后截图。 */
+  takePhoto(): void;
+  albumPhotos(): readonly AlbumPhoto[];
+  openAlbumPanel(): void;
+  closeAlbumPanel(): void;
+  isAlbumPanelOpen(): boolean;
+  /** 宝石图鉴：entry 为 null 表示尚未发现。 */
+  codexEntries(): Array<{ kind: GemKind; entry: CodexEntry | null }>;
+  codexState(): { discovered: number; total: number };
+  openCodexPanel(): void;
+  closeCodexPanel(): void;
+  isCodexPanelOpen(): boolean;
+  /** 当前所在的里程碑序号（每 500m 一块，可正可负）。 */
+  milestoneIndex(): number;
   /** 合成台：打开 / 关闭面板（等同按 C）。 */
   openCraftPanel(): void;
   closeCraftPanel(): void;

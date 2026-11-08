@@ -37,15 +37,16 @@
 | 2 | 移动、自动前进、跳跃、重力、碰撞 | `Player.update` |
 | 3 | 推进时刻，得到新的光照快照 | `DayNightCycle` |
 | 4 | 加载 / 卸载附近区块与道路段 | `WorldStreamer.update` |
-| 5 | 动物生成 / 回收、行为推进、实例矩阵 | `WildlifeManager.update` |
-| 6 | 宝石扫描 / 动态生成 / 拾取动画（回调把宝石写进背包） | `GemManager.update` |
-| 7 | 第一 / 第三人称相机 | `CameraRig.update` |
-| 8 | 应用天空、太阳、雾、星星、水、云、路灯亮度 | `SceneEnvironment.applyDaylight` + `WorldMaterials.setLampIntensity` |
-| 9 | 天空 / 星空跟随相机，水与云跟随玩家 | `SceneEnvironment.update` |
-| 10 | 角色动画 | `Hero.update` |
-| 11 | HUD / 小地图（内部节流）；宝石雷达点位 0.25s 刷新一次 | `Hud` / `Minimap` / `Game.refreshRadar` |
-| 12 | 大地图实时滚动、天穹俯瞰（内部节流，必须先于主视角渲染） | `BigMap` / `SkyView` |
-| 13 | 提交渲染 | `Viewport.render` |
+| 5 | 补建 / 卸载前后 700m 的里程碑木牌，跨过时返回播报 | `MilestoneSigns.update` |
+| 6 | 动物生成 / 回收、行为推进、实例矩阵 | `WildlifeManager.update` |
+| 7 | 宝石扫描 / 动态生成（动物、雨、雪、晴天白昼、夜晚）/ 拾取动画（回调把宝石写进背包与图鉴） | `GemManager.update` |
+| 8 | 第一 / 第三人称相机 | `CameraRig.update` |
+| 9 | 应用天空、太阳、雾、星星、水、云、路灯亮度 | `SceneEnvironment.applyDaylight` + `WorldMaterials.setLampIntensity` |
+| 10 | 天空 / 星空跟随相机，水与云跟随玩家 | `SceneEnvironment.update` |
+| 11 | 角色动画 | `Hero.update` |
+| 12 | HUD / 小地图（内部节流）；宝石雷达点位 0.25s 刷新一次 | `Hud` / `Minimap` / `Game.refreshRadar` |
+| 13 | 大地图实时滚动、天穹俯瞰（内部节流，必须先于主视角渲染） | `BigMap` / `SkyView` |
+| 14 | 提交渲染；若 `K` 刚按下，在同一帧抓取画布像素存进相册 | `Viewport.render` + `Game.capturePhoto` |
 
 开始界面阶段仍在跑同一循环，只是跳过玩家移动，并让相机缓慢自转；世界会提前预生成附近区块。
 
@@ -291,15 +292,15 @@ save.registerSection({
 
 ### 覆盖层与输入
 
-存档面板与大地图 / 天穹大视野互斥，且**不暂停模拟**：
+存档面板 / 背包 / 相册 / 图鉴 / 合成台与大地图、天穹大视野互斥，且**不暂停模拟**：
 
 - `openSavePanel()` 先 `savePanel.open()`，再关闭两个大视野，最后 `setOverlayMode(true)` + `exitPointerLock()`；先开面板是为了让 `releaseOverlayInput()` 看到面板已打开，不再重新请求 Pointer Lock（避免关闭大视野时锁定鼠标再被面板强行退出，产生闪烁）；
-- `Esc` 顺序：合成台 → 背包 → 存档面板 → 天穹 → 大地图；
+- `Esc` 顺序：合成台 → 背包 → 图鉴 → 相册 → 存档面板 → 天穹 → 大地图；
 - `SavePanel` 打开时刷新摘要并启用 / 禁用按钮：无本地存档时「载入 / 删除」不可点，`localStorage` 不可用（隐私模式）时「保存」不可点。
 
 ## 13. 宝石系统
 
-宝石是低概率出现的发光地标，共 7 种。它们不参与物理 / 碰撞，也不修改世界，只是从地形数据里“挑点”然后在场景里画出来，因此可以完全按需生成与回收。
+宝石是低概率出现的发光地标，共 10 种。它们不参与物理 / 碰撞，也不修改世界，只是从地形数据里“挑点”然后在场景里画出来，因此可以完全按需生成与回收。
 
 ### 分层
 
@@ -310,9 +311,13 @@ gems/sites.ts          纯函数：给定 (World, seed, cx, cz) → 该区块的
         │              钻石 / 蓝 / 绿 / 黑 / 黄各走一条生境规则
 world/desertLandmarks.ts  hoodooSiteAt()：风蚀岩柱位置，植被撒点与黄宝石共用
         │
-gems/GemManager.ts      渲染（八面体 + 光晕 + 光柱）、区块扫描、红 / 紫动态生成
+gems/GemManager.ts      渲染（多面体 + 光晕 + 光柱）、区块扫描、动物 / 天气 / 夜晚动态生成
         │
 app/Game.ts             每帧 update(dt, playerState, weather, waterLevel)
+
+宝石合成（独立于生成管线）：
+config/gemSynthesis.ts  2 合 1 配方表 + 6 层获取难度
+gems/GemSynthesis.ts    纯逻辑：库存足够时 spend(2) → add(1)
 ```
 
 `GemManager` 只依赖 `World`、`PlayerState`、天气快照、水位和一份动物位置回调（由 `Game` 传入 `WildlifeManager.getSightings()`），不碰 DOM 与输入。
@@ -320,14 +325,16 @@ app/Game.ts             每帧 update(dt, playerState, weather, waterLevel)
 ### 每帧流程
 
 1. 每 0.3s 扫一次玩家周围 5 个区块（约 320m），按距离由近到远，最多新算 10 个区块的站点；
-2. 站点命中就按 `maxActive` 生成；离玩家超过 480m 的固定宝石（含紫宝石、荧光石）回收；
+2. 站点命中就按 `maxActive` 生成；离玩家超过 480m 的固定宝石（含动态宝石）回收；
 3. 红宝石每 0.2s 跟随一次动物，丢失目标 1.5s 后回收；
-4. 紫宝石在降水 ≥ 0.08 时每 2.2s 掷一次，转晴后全部回收；
-5. 荧光石在日照因子 < 0.35（夜晚）时每 3.5s 掷一次，天亮后立即回收；
-6. 荧光石的本体固定为每面一色（顶点色），光晕与光柱是同时多色的彩虹贴图：光晕按 `glowHaloSpin` 自转、光柱贴图按 `glowPillarScroll` 沿柱面滚动；
-7. 水位变化超过 0.02 时重算所有宝石的 `baseY`（湖心的蓝宝石会随水位一起上升）；
-8. 每颗宝石自转（1.15 弧度/秒），光晕按正弦呼吸；
-9. 最后跑一次拾取：碰到玩家胸口的宝石进入 `collectTime` 动画（详见「14. 背包与拾取」），动画结束时回调 `Game.collectGem()` 写进背包并移除这一颗。已经进入拾取动画的宝石不参与扫描回收、红宝石跟随与水位重算。
+4. 紫宝石在**雨天**且降水 ≥ 0.08 时每 2.2s 掷一次，雨停后全部回收；
+5. 冰晶石在**雪天**且降雪 ≥ 0.08 时每 2.6s 掷一次，雪停后全部回收；
+6. 日耀石在**晴天白昼**（降水 ≤ 0.02 且日照 ≥ 0.55）时每 3.2s 掷一次，天黑或转雨雪后立即回收；
+7. 荧光石在日照因子 < 0.35（夜晚）时每 3.5s 掷一次，天亮后立即回收；
+8. 荧光石的本体固定为每面一色（顶点色），光晕与光柱是同时多色的彩虹贴图：光晕按 `glowHaloSpin` 自转、光柱贴图按 `glowPillarScroll` 沿柱面滚动；
+9. 水位变化超过 0.02 时重算所有宝石的 `baseY`（湖心的蓝宝石会随水位一起上升）；
+10. 每颗宝石自转（1.15 弧度/秒），光晕按正弦呼吸；
+11. 最后跑一次拾取：碰到玩家胸口的宝石进入 `collectTime` 动画（详见「14. 背包与拾取」），动画结束时回调 `Game.collectGem()` 写进背包与图鉴并移除这一颗。已经进入拾取动画的宝石不参与扫描回收、红宝石跟随与水位重算。
 
 ### 站点规则（概率都在 `GEM_RULES` / `GEM_DYNAMIC` 里）
 
@@ -338,7 +345,9 @@ app/Game.ts             每帧 update(dt, playerState, weather, waterLevel)
 | 蓝宝石 | 不看 biome / 深度：落点比水位低 0.4m，且向外 24m 的 8 个方向都仍是水（水面直径 ≥ 48m）。候选点按 96m 水面格划分，格心附近 3×3（步长 24m）从深到浅验算 | 每个水面格 0.4；一格最多一颗，相邻两颗至少隔 48m，最多 3 颗 |
 | 绿宝石 | 绿洲：只由绿洲中心所在区块生成，落点在湖岸外 40m 到绿洲外缘之间；草地：草原地表、离水面 / 道路 / 沙漠都够远 | 每块绿洲 0.85；每个草地区块 0.005；最多 3 颗 |
 | 黄宝石 | 岩柱：复用 `hoodooSiteAt()` 的真实岩柱格号，落点距岩柱 3.6–5.2m；沙漠：沙漠生境因子 ≥ 0.6、离所有岩柱 ≥ 9.6m | 每根岩柱 0.7；每个沙漠区块 0.006；最多 3 颗 |
-| 紫宝石 | 玩家 55–250m 的环形内，避开道路、沙漠、水面与其它宝石 | 每次扫描 0.3，最多 3 颗 |
+| 紫宝石 | 雨天玩家 55–250m 的环形内，避开道路、沙漠、水面与其它宝石 | 每次扫描 0.3，最多 3 颗；雨停回收 |
+| 冰晶石 | 雪天玩家 55–250m 的环形内，避开道路、沙漠、水面与其它宝石 | 每次扫描 0.3，最多 3 颗；雪停回收 |
+| 日耀石 | 晴天白昼玩家 60–240m 的开阔地，避开道路、沙漠、水面与其它宝石 | 每次扫描 0.28，最多 2 颗；天黑 / 转雨雪回收 |
 | 荧光石 | 夜晚玩家 60–260m 的开阔地，避开道路、水面与其它宝石（不避开沙漠） | 每 3.5s 0.3，最多 2 颗 |
 | 红宝石 | 130m 内最近的牛 / 鹿 / 骆驼，宝石悬在背上方并跟着走 | 每 16s 0.4，最多 1 颗 |
 
@@ -362,18 +371,18 @@ app/Game.ts             每帧 update(dt, playerState, weather, waterLevel)
 - 粗采样与峰顶结果分别按 `seed:cx:cz` 做 LRU 缓存（2048 项），反复加载同一区块只算一次。
 - 光柱颜色来自 `GemDefinition.pillarColor`，黑宝石设成纯黑（`0x000000`），其余宝石不填、沿用 `glow`；光晕仍是暗紫，保证宝石本体在白雪山上有对比度。
 
-红 / 紫 / 荧光石是**动态**的（依赖动物、天气与昼夜），位置不写入存档，也不需要确定性；只有“被收走了几颗”记在背包里。
+红 / 紫 / 冰晶 / 日耀 / 荧光石是**动态**的（依赖动物、天气与昼夜），位置不写入存档，也不需要确定性；只有“被收走了几颗”记在背包里。
 
 ### 拾取钩子
 
 `GemManager` 不认识背包，只接收 `Game` 注入的两个回调（`GemManagerHooks`）：
 
 - `isTaken(key)`：`spawnSite()` 在生成前问一次，固定宝石的站点被收走过就直接跳过，走远再回来不会复活；
-- `onCollect(kind, key)`：拾取动画播完后回调，由 `Game.collectGem()` 写进 `Inventory`、刷新 HUD 与提示，并 refresh 已打开的背包面板。
+- `onCollect(kind, key)`：拾取动画播完后回调，由 `Game.collectGem()` 写进 `Inventory`、记录 `GemCodex`、刷新 HUD 与提示，并 refresh 已打开的背包 / 图鉴面板。
 
 ### 渲染与性能
 
-每颗宝石 = 1 个按形状创建的几何体（`createGemShape()` 依据 `GEM_DEFINITIONS[kind].shape` 生成：八面体、二十面体、四面体、十二面体、`LatheGeometry` 双锥 / 钻石切面 / 六棱晶体、细分二十面体球，最大外径都对齐到 0.92m）+ 1 个 `Sprite` 光晕（除荧光石外加色混合）+ 1 根开口圆柱光柱（`MeshBasicMaterial`，Canvas 贴图、普通透明混合、`fog: false`、`toneMapped: false`）。几何体按种类各建一份，`dispose()` 时统一释放。同时最多十余颗，因此不做实例化（实例化反而无法逐颗换材质）。
+每颗宝石 = 1 个按形状创建的几何体（`createGemShape()` 依据 `GEM_DEFINITIONS[kind].shape` 生成：八面体、二十面体、四面体、十二面体、`LatheGeometry` 双锥 / 钻石切面 / 六棱晶体、细分二十面体球、四棱冰锥、挤出的五角星，最大外径都对齐到 0.92m）+ 1 个 `Sprite` 光晕（除荧光石外加色混合）+ 1 根开口圆柱光柱（`MeshBasicMaterial`，Canvas 贴图、普通透明混合、`fog: false`、`toneMapped: false`）。几何体按种类各建一份，`dispose()` 时统一释放。同时最多十余颗，因此不做实例化（实例化反而无法逐颗换材质）。
 
 荧光石独占一套材质：本体是 `toNonIndexed()` 之后写 `color` 顶点属性的 80 面二十面体球（`MeshBasicMaterial({ vertexColors: true, toneMapped: false })`，每面 `setHSL(face * 0.618 % 1, ...)` 取色），光晕与光柱用两张 Canvas 彩虹贴图（24 段色环 + 径向 / 竖向 alpha），因此不依赖每帧改颜色也不会被 ACES 色调映射压成白色。光晕之所以用普通透明混合而不是加色混合：加色会把一圈颜色相加成白色，多色就没了。
 
@@ -385,9 +394,9 @@ app/Game.ts             每帧 update(dt, playerState, weather, waterLevel)
 
 ### 扩展方式：新增一种宝石
 
-1. `config/gems.ts`：在 `GemKind`、`GemShape`、`GEM_DEFINITIONS`、`GEM_KINDS` 中添加条目（形状、颜色、光晕色、`maxActive`、规则文案）；需要新轮廓时在 `createGemShape()` 里补一个 `case`；
+1. `config/gems.ts`：在 `GemKind`、`GemShape`、`GEM_DEFINITIONS`、`GEM_KINDS` 中添加条目（形状、颜色、光晕色、`maxActive`、规则文案）；需要新轮廓时在 `createGemShape()` 里补一个 `case`，并在 `ui/gemIcon.ts` / `styles/inventory.css` 补一个剪影类名；
 2. 固定宝石：在 `gems/sites.ts` 的 `SALTS` 里加独立盐值 + 在 `GEM_RULES` 里加概率 + 在 `findSite` 里加一条生境规则；站点 key 用 `kind:cx:cz`；
-3. 动态宝石：在 `GEM_DYNAMIC` 加参数，并在 `GemManager` 里加一个 `updateXxx()`（可参考 `updateRed` / `updatePurple`）；
+3. 动态宝石：在 `GEM_DYNAMIC` 加参数，并在 `GemManager` 里加一个 `updateXxx()`（可参考 `updateRed` / `updatePurple`）；若是天气 / 昼夜驱动的，把种类加进 `DYNAMIC_GEM_KINDS`，它就会自动从固定站点扫描与 `taken` 白名单里排除；
 4. 若需要新的外观，在 `GemManager` 构造里补材质；尺寸 / 光柱参数统一在 `GEM_VISUALS`；
 5. 补 `tests/gems/gems.test.ts`：外观约束 + 新规则的地形断言 + 站点可复现性。
 
@@ -417,15 +426,30 @@ interface InventoryData {
 ```
 
 - 计数上限 9999 / 种类，`fromSave` 用 `Math.floor` + 夹紧，`Infinity` / `NaN` / 负数都被压回合法区间；
-- `taken` 最多 4000 项，只接受**静态**站点 key（`kind:cx:cz`）；`red:` / `purple:` / `glow:` 这些动态前缀一律丢弃，避免收过一颗紫宝石就永久锁死这个系统；
+- `taken` 最多 4000 项，只接受**静态**站点 key（`kind:cx:cz`）；`DYNAMIC_GEM_KINDS`（`red` / `purple` / `glow` / `frost` / `sun`）这些动态前缀一律丢弃，避免收过一颗紫宝石就永久锁死这个系统；
 - 空背包 `toSave()` 返回 `undefined`，存档里不会多出 `sections.inventory`。
 
 ### 面板格子（`InventoryPanel`）
 
 - 固定 `SLOT_COLUMNS = 6` / `SLOT_ROWS = 4`，共 24 格——**空格子也要画出来**，`refresh()` 永远铺满 24 个，只是没东西的格子标 `is-empty`（虚线框、更暗的底色）；窄屏时 `--bag-columns` 由 CSS 媒体查询降到 4 列。
-- 每格画的是这颗宝石的**形状**：`SHAPE_CLASS` 把 `GemShape` 映射成 `bag-gem--octahedron / icosahedron / tetrahedron / dodecahedron / bipyramid / brilliant / crystal / orb`，各自一条 `clip-path` 剪影。
+- 每格画的是这颗宝石的**形状**：`SHAPE_CLASS` 把 `GemShape` 映射成 `bag-gem--octahedron / icosahedron / tetrahedron / dodecahedron / bipyramid / brilliant / crystal / orb / shard / star`，各自一条 `clip-path` 剪影。
 - 颜色不写死在 CSS：`slot()` 用宝石主色现算三段渐变写进 `--gem-light / --gem-color / --gem-dark`，辉光取 `--gem-glow`（光晕色）；荧光石没有单一主色，走 `conic-gradient` 彩虹 + 球面高光，因此不设这几个变量。
 - 数量在右下角的小角标里（`×N` 只出现在 `title` 悬浮提示里），`bag-item` 类名保留给调试脚本按品类找格子。
+
+### 宝石合成（2 合 1）
+
+```text
+config/gemSynthesis.ts   配方表 + 获取难度层级（只描述数据，不依赖 Inventory）
+gems/GemSynthesis.ts     synthesizeGem()：先 spend 2 颗，再 add 1 颗；失败不动库存
+ui/InventoryPanel.ts     背包下半部分的合成列表：实时数量、禁用态、结果提示
+app/Game.ts              synthesizeGems()：刷新 HUD、图纸可用数量并静默存档
+```
+
+- 难度层级：`日耀 / 荧光` → `红 / 紫` → `黄 / 蓝` → `绿 / 冰晶` → `钻石` → `黑`；每条配方都必须从低层走向高层，测试会逐条校验；
+- 两条支线最终汇到钻石：`32 日耀 → 1 黑`、`32 荧光 → 1 黑`。这样既给常见宝石一个长期去处，也避免 10 级直链把顶级宝石抬到 512 颗；
+- `synthesizeGem()` 只在 `Inventory.spend()` 成功后才 `add()`，库存不足时返回 `no-stock` 且不产生任何改动；
+- 合成不新增存档段：结果直接是背包里的数量变化，随 `sections.inventory` 一起落盘；`Game` 在成功后调用 `save.saveLocal()`；
+- 面板每次 `refresh()` 都会先重画配方数量，再按旧签名决定是否重建 24 个收纳格，因此合成后数量与按钮禁用态立即同步。
 
 ### 拾取判定与动画（`GEM_COLLECT`）
 
@@ -443,7 +467,7 @@ interface InventoryData {
 - 载入 / 导入存档后 `Game.runSaveAction()` 统一同步 HUD 数量与面板内容（`syncInventoryUi()`），因为 `taken` 也一起变了；调试接口 `loadGame()` / `importSaveText()` 也走同一个 `syncInventoryUi()`，避免出现“背包有了、HUD 还是 0”；
 - `GemManager.dropTakenSites()` 在同步时顺手把场景里已经属于 `taken` 的固定宝石摘掉，否则导入一份“收过这颗”的存档后，那颗宝石还会站在原地；
 - HUD 新增「宝石：N 颗」与 toast（1.8s 后自动隐藏），提示文案是「收进背包：钻石 +1」，只报这一颗、不带累计数量；背包面板按 `B` 或底部按钮打开；
-- 覆盖层互斥：`openBagPanel()` 先自己进入打开状态，再关掉存档面板 / 大地图 / 天穹，最后 `setOverlayMode(true)` + `exitPointerLock()`；`releaseOverlayInput()` 会等背包也关掉才重新锁定鼠标，`Esc` 顺序是 合成台 → 背包 → 存档 → 天穹 → 大地图。
+- 覆盖层互斥：`openBagPanel()` 先自己进入打开状态，再关掉存档面板 / 图鉴 / 大地图 / 天穹，最后 `setOverlayMode(true)` + `exitPointerLock()`；`releaseOverlayInput()` 会等背包也关掉才重新锁定鼠标，`Esc` 顺序是 合成台 → 背包 → 图鉴 → 相册 → 存档 → 天穹 → 大地图。
 
 ### 扩展方式：新增一个收纳品类
 
@@ -471,7 +495,7 @@ app/Game.ts             applyUnlocks() 把解锁状态门控到输入 / 工具�
 
 ```ts
 interface FeatureSpec {
-  id: FeatureId;              // walk / jump / bag（默认能力）+ speed1..7 / sprint / time / weather / view / radar / sky / save
+  id: FeatureId;              // walk / jump / bag（默认能力）+ speed1..7 / album / sprint / codex / time / weather / view / radar / sky / save
   label: string; summary: string;
   layout: string[];           // 例：['gyg', ...] / ['y.g', '.d.', 'g.y']，'.' 为留白；默认能力为空数组
   cols: number; rows: number;
@@ -489,7 +513,7 @@ interface UnlockSaveData {   // sections.unlock，同时也是独立槽位的内
 }
 ```
 
-- `FEATURE_ORDER` 包含全部 17 项（含默认能力），`CRAFT_FEATURE_ORDER = FEATURE_ORDER.filter(!isDefaultFeature)` 才是合成台的 14 项；测试断言两者差集正好等于 `DEFAULT_UNLOCKED_FEATURES`；
+- `FEATURE_ORDER` 包含全部 19 项（含默认能力），`CRAFT_FEATURE_ORDER = FEATURE_ORDER.filter(!isDefaultFeature)` 才是合成台的 16 项；测试断言两者差集正好等于 `DEFAULT_UNLOCKED_FEATURES`；
 - `UnlockSystem` 的 `unlockedIds` 初始化与 `reset()` 都会先放入 `DEFAULT_UNLOCKED_FEATURES`，因此 `walk / jump / bag` 永远处于已解锁态，但不会出现在 `toSave().unlocked` 里，`unlockAll()` 也跳过它们；
 
 - `draft` 长度固定等于 `cells.length`（含留白格），留白格永远不放宝石；
@@ -504,7 +528,8 @@ interface UnlockSaveData {   // sections.unlock，同时也是独立槽位的内
 | 行走 / 跳跃 | **默认解锁**，`gateIntent()` 只透传 `forward / strafe / jump`，不再清零 |
 | 奔跑 | `gateIntent()` 把 `run` 置为 `isUnlocked('sprint') && intent.run`，`Player` 本身完全不知道解锁这回事 |
 | 速度 1–7 档 | `UnlockSystem.speedLimit()` 取已解锁档位的最大倍率，`setSpeedScale()` 夹紧到 `[0.5, limit]`；`SpeedControl.setLimits()` 同步滑杆 `min / max`、禁用态与提示 |
-| 背包 / 存档 / 时间 / 第三人称 | 各 `open*()` / `set*()` 入口先用 `blockedByUnlock()` 判断，命中就 `hud.announce()` 提示去合成台，不进入打开状态（背包默认解锁，这条门控恒为放行） |
+| 背包 / 存档 / 时间 / 第三人称 / 相册 / 图鉴 | 各 `open*()` / `set*()` 入口先用 `blockedByUnlock()` 判断，命中就 `hud.announce()` 提示去合成台，不进入打开状态（背包默认解锁，这条门控恒为放行） |
+| 相册（`K` 键） | `requestPhoto()` 同样先 `blockedByUnlock('album')`，未解锁时只提示，不置 `photoRequest`；工具栏相册按钮由 `applyUnlocks()` 调 `Toolbar.setLocked('album')` 变暗 |
 | 天穹视角 | `skyView.setUnlocked()`：未解锁时把 `#skyOpen` / `#skyBigOpen` 的 `hidden` 置真（`hud.css` 里 `[hidden]` 覆盖作者的 `display:block`），并 `close()` + `update()` 提前返回；解锁后才出现缩略图与按钮 |
 | 宝石雷达 | `Game.refreshRadar()` 每 0.25s 一次：解锁时把 `gems.getSightings()` 交给 `minimap.setGems()` 与 `bigMap.setGems()`，未解锁时传 `null` 清空光点；解锁状态变化时 `applyUnlocks()` 立即刷新 |
 | 天气控制 | `WeatherControl.setLocked()` 与原有的沙漠遮挡（`desertBlocked`）合并成一个 `blocked` getter |
@@ -532,8 +557,63 @@ interface UnlockSaveData {   // sections.unlock，同时也是独立槽位的内
 
 ### 测试与扩展
 
-- `tests/unlock/unlock.test.ts` 覆盖：图纸可解析且 `needs / total / cells` 一致、14 张可合成图纸形状互不相同、难度总数只增不减（4→22）、速度 7 档逐级加码、默认能力（`DEFAULT_UNLOCKED_FEATURES` 与 `CRAFT_FEATURE_ORDER` 的差集）初始化即解锁且不写进存档、宝石雷达大量消耗蓝 / 绿 / 黄、摆放的六种拒绝分支、跨草稿预留、四种合成结果、速度上限取最高档、存档往返与合并语义、独立槽位的坏数据降级；
+- `tests/unlock/unlock.test.ts` 覆盖：图纸可解析且 `needs / total / cells` 一致、16 张可合成图纸形状互不相同、难度总数只增不减（4→24）、速度 7 档逐级加码、默认能力（`DEFAULT_UNLOCKED_FEATURES` 与 `CRAFT_FEATURE_ORDER` 的差集）初始化即解锁且不写进存档、宝石雷达大量消耗蓝 / 绿 / 黄、前两档速度不含沙漠 / 绿洲的蓝绿黄、除黑宝石外每种宝石至少出现在 5 张图纸里、摆放的六种拒绝分支、跨草稿预留、四种合成结果、速度上限取最高档、存档往返与合并语义、独立槽位的坏数据降级；
 - 新增一项功能：在 `FEATURE_SEEDS` 里加一张图纸（`layout` 决定形状与需求）→ 在 `FeatureId` 登记 → 若它是开局能力，同时加进 `DEFAULT_UNLOCKED_FEATURES`（它就不会出现在 `CRAFT_FEATURE_ORDER` 与解锁存档里）→ 在 `Game.applyUnlocks()` 里给它的能力加一条门控 → 若要速度档位，在 `SPEED_FEATURE_PRESETS` 里补倍率。UI 与存档格式都不需要改。
+
+## 16. 里程碑、旅途相册与宝石图鉴
+
+三个系统都刻意保持“无状态副作用”：木牌只读地形采样，相册只存一张压缩缩略图，图鉴只记首次发现，刷新后行为完全一致。
+
+### 里程碑路牌
+
+```text
+config/world   ROAD_WIDTH / 道路高度 / 桥面系数
+      │
+world/milestones.ts     纯函数：500m 间距、区间序号（向下取整）、木牌文字
+world/MilestoneSigns.ts 按玩家 z 补建 / 卸载 ±700m 内的木牌，检测跨越
+app/Game.ts             update() 取返回值，用 Hud.announce 播报
+```
+
+- 序号 `milestoneIndexAt(z) = floor(z / 500)` 表示“位于哪两个路牌之间”；跨越发生在 `index` 变化且跨度为 1 时，真正越过的那块取 `max(前一块, 新一块)`，正反方向都对；
+- 传送、载入存档、换世界会让 `index` 一次跳很多，`|delta| !== 1` 时直接丢弃，不刷屏；
+- 木牌位置：`roadX(z) ± (ROAD_WIDTH / 2 + 1.3)`（植被从路缘 1.5m 外才开始生成，因此不会长在树里），高度取 `max(groundAt, roadHeight)`；桥面（`bridge > 0.3`）跳过；
+- 牌面几何是两块背对背的四边形合并成的单个 `BufferGeometry`，背面 UV 左右翻转，正反两面文字都不镜像，一次绘制完成；
+- 贴图按序号缓存 12 张，超出后优先释放不在场景里的那一张；`CanvasTexture` 与 `MeshLambertMaterial` 一起释放，长途旅行不会累积 canvas；
+- 牌面用同一张画布同时作为 `map` 与 `emissiveMap`，夜里仍有 28% 自发光，不会变成黑块；
+- 木牌不属于区块流式系统：它只依赖地形高度函数，和区块加载 / 卸载互不影响。
+
+### 旅途相册
+
+```text
+input/Keyboard         K → take-photo
+app/Game.ts            photoRequest = true → 下一帧 render 后 capturePhoto()
+album/Album.ts         纯数据：上限 16 张、按 id 删除、toSave / fromSave 校验
+ui/AlbumPanel.ts       3 列网格、大图、删除
+save/SaveService       sections.album
+```
+
+- **为什么不在按键时立刻截图**：`WebGLRenderer` 没有开 `preserveDrawingBuffer`，画布内容在浏览器合成后就不再可靠；把截图放在 `viewport.render()` 之后、同一帧任务内执行，`drawImage` 才能拿到真实像素，同时避免为一张照片牺牲整局的渲染性能；
+- 截图流程：主画布 → 480px 宽的 2D canvas → `toDataURL('image/jpeg', 0.62)`，HUD / 面板等 DOM 天然不入镜；
+- 数据：种子、坐标、朝向、时刻、天气、地貌、自动标题（`天气 · 地貌 · 时刻`）与缩略图；单张约 15–20KB，最多 16 张；
+- 校验：缩略图必须是以 `data:image/` 开头的字符串且长度受限，所有数字必须有限，文本截断到 120 字符，重复 `id` 跳过；任何一项不合法只丢这一张，不影响整段存档；
+- 删除与新增都会静默 `save.saveLocal()`，照片随世界存档一起导入导出；
+- 相册需要先合成「旅途相册」才解锁：`K` 键走 `requestPhoto()` 的门控，未解锁时只提示去合成台；面板打开时退出 Pointer Lock，并在 `releaseOverlayInput()` 里与其它覆盖层一起参与“全部关闭后才恢复锁定”的判断。
+
+### 宝石图鉴
+
+```text
+codex/GemCodex.ts       纯数据：首次发现记录、累计数量、toSave / fromSave 校验
+ui/CodexPanel.ts        两列卡片、未发现剪影、首次时间 / 种子 / 坐标
+app/Game.ts             collectGem() 记录；registerSection({ key: 'codex' })
+```
+
+- 首次拾取时写入 `{ kind, firstAt, seed, x, z, count }`；之后再拾取同类只把 `count + 1`，首次地点不会被覆盖；
+- `list()` 按 `GEM_KINDS` 固定顺序返回全部条目，未发现时 `entry` 为 `null`，面板据此画黑色剪影并保留出现条件提示；
+- `fromSave` 只接受已知 `GemKind`、有限数字与正数量，重复条目取第一条；空图鉴 `toSave()` 返回 `undefined`，不写空段；
+- 首次发现时 HUD 播报「图鉴新增（N/10）」，普通重复拾取仍只报「+1」；图鉴需要先合成「宝石图鉴」才解锁，未解锁时工具栏按钮变暗、`openCodexPanel()` 只提示；
+- 面板刷新有签名短路：内容没变不重建 DOM，打开状态与拾取回调共用同一个 `refresh()`；
+- 调试接口：`window.__wild.codexEntries()` / `codexState()` / `openCodexPanel()` / `closeCodexPanel()` / `isCodexPanelOpen()`。
+
 
 
 

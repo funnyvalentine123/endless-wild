@@ -1,0 +1,165 @@
+/* 旅途相册：沿用存档面板的遮罩与卡片，内容换成 3 列照片网格。 */
+.album-card {
+  position: relative;
+  width: min(94vw, 860px);
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.album-grid:empty {
+  display: none;
+}
+
+.album-card-item {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: zoom-in;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.album-card-item:hover,
+.album-card-item:focus-within {
+  border-color: rgba(255, 233, 168, 0.5);
+  transform: translateY(-1px);
+}
+
+.album-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.album-card-item figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+}
+
+.album-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #ffe9a8;
+}
+
+.album-meta {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.62;
+}
+
+.album-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  padding: 3px 8px;
+  background: rgba(8, 18, 24, 0.72);
+  color: #ffb4a6;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.album-card-item:hover .album-remove,
+.album-card-item:focus-within .album-remove {
+  opacity: 1;
+}
+
+.album-remove:hover,
+.album-remove:focus-visible {
+  background: rgba(255, 138, 114, 0.28);
+  outline: none;
+}
+
+.album-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  opacity: 0.66;
+}
+
+.album-empty[hidden] {
+  display: none;
+}
+
+/* 大图：盖在相册卡片上，点背景或「关闭大图」退出。 */
+.album-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: inherit;
+  background: rgba(4, 10, 14, 0.9);
+}
+
+.album-viewer[hidden] {
+  display: none;
+}
+
+.album-viewer img {
+  max-width: 100%;
+  max-height: 76%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.album-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: #ffe9a8;
+}
+
+.album-viewer-bar button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.album-viewer-bar button:hover,
+.album-viewer-bar button:focus-visible {
+  background: rgba(255, 255, 255, 0.3);
+  outline: none;
+}
+
+@media (max-width: 720px) {
+  .album-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 460px) {
+  .album-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
